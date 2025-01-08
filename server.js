@@ -1,10 +1,11 @@
 const express = require('express');
 const multer = require('multer');
 const { google } = require('googleapis');
-const OAuth = require('oauth-1.0a');
 const crypto = require('crypto');
 const axios = require('axios');
 const fs = require('fs');
+const path = require('path');
+const db = require('./database');
 require('dotenv').config();
 
 const app = express();
@@ -17,13 +18,12 @@ const port = process.env.PORT || 3000;
 const auth = new google.auth.GoogleAuth({
     credentials: {
         client_email: process.env.CLIENT_EMAIL,
-        private_key: process.env.PRIVATE_KEY.replace(/\\n/g, '\n'), // Ensure line breaks are handled properly
+        private_key: process.env.PRIVATE_KEY.replace(/\\n/g, '\n'), // Handle newlines properly
     },
     scopes: ['https://www.googleapis.com/auth/drive'],
 });
 
 const drive = google.drive({ version: 'v3', auth });
-
 
 // Helper function: Create folder in Google Drive
 async function createFolder(folderName) {
@@ -71,15 +71,15 @@ async function uploadFile(filePath, fileName, folderId) {
     }
 }
 
-// Helper function: Share folder with a user
+// Helper function: Share folder with your personal email
 async function shareFolder(folderId, email) {
     try {
-        const res = await drive.permissions.create({
+        await drive.permissions.create({
             fileId: folderId,
             requestBody: {
                 role: 'writer',
                 type: 'user',
-                emailAddress: email,
+                emailAddress: email, // Only your personal email
             },
         });
         console.log(`Folder shared with ${email}`);
@@ -89,8 +89,49 @@ async function shareFolder(folderId, email) {
     }
 }
 
+// `/process-order` Endpoint
+app.post('/process-order', async (req, res) => {
+    try {
+        const { name, email, receiptId, timestamp } = req.body;
 
-// Multiple file upload endpoint
+        if (!name || !email || !receiptId) {
+            console.error('Missing required fields:', { name, email, receiptId });
+            return res.status(400).send({ success: false, error: 'Missing required fields.' });
+        }
+
+        console.log('Received order:', { name, email, receiptId, timestamp });
+
+        // Generate unique ID for the upload form
+        const uniqueId = crypto.randomUUID();
+
+        // Save order to database
+        db.run(
+            `INSERT INTO requests (id, name, email, receiptId, timestamp, status) VALUES (?, ?, ?, ?, ?, ?)`,
+            [uniqueId, name, email, receiptId, timestamp || new Date().toISOString(), 'Pending'],
+            (err) => {
+                if (err) {
+                    console.error('Database Error:', err.message);
+                    return res.status(500).send({ success: false, error: 'Failed to save record.' });
+                }
+                console.log(`Order saved for ${name} with ID ${uniqueId}`);
+            }
+        );
+
+        // Generate upload link
+        const uploadLink = `https://file-request-app.onrender.com/upload-form/${uniqueId}`;
+
+        res.status(200).send({
+            success: true,
+            message: 'Order processed successfully.',
+            uploadLink,
+        });
+    } catch (error) {
+        console.error(`Error processing order: ${error.message}`);
+        res.status(500).send({ success: false, error: error.message });
+    }
+});
+
+// `/upload` Endpoint
 app.post('/upload', (req, res, next) => {
     upload.array('files', 10)(req, res, (err) => {
         if (err) {
@@ -100,126 +141,94 @@ app.post('/upload', (req, res, next) => {
         next();
     });
 }, async (req, res) => {
-    console.log('Files:', req.files);
-    console.log('Body:', req.body);
-
     try {
-        const { name, email, receiptId } = req.body;
+        const { id } = req.body;
 
-        // Validate request fields
-        if (!name || !email || !receiptId) {
-            console.error('Missing required fields:', { name, email, receiptId });
-            return res.status(400).send({
-                success: false,
-                error: 'Missing required fields: name, email, or receiptId',
-            });
-        }
-
-        if (!req.files || req.files.length === 0) {
-            console.error('No files provided.');
-            return res.status(400).send({
-                success: false,
-                error: 'No files provided in the request.',
-            });
-        }
-
-        // Create folder or find existing one
-        const folderName = `${name}-${email}`;
-        const folderId = await createFolder(folderName);
-
-        // Share the folder with your personal email
-        const personalEmail = process.env.PERSONAL_EMAIL; // Replace with your personal email
-        await shareFolder(folderId, personalEmail);
-
-        // Upload all files to the folder
-        const uploadedFiles = [];
-        for (const file of req.files) {
-            const fileId = await uploadFile(file.path, file.originalname, folderId);
-            uploadedFiles.push({ fileName: file.originalname, fileId });
-
-            // Cleanup local file
-            fs.unlinkSync(file.path);
-        }
-
-        // Respond with success
-        res.status(200).send({
-            success: true,
-            message: 'Files uploaded and folder shared successfully',
-            files: uploadedFiles,
-        });
-    } catch (error) {
-        console.error(`Error processing request: ${error.message}`);
-        res.status(500).send({
-            success: false,
-            error: error.message,
-        });
-    }
-});
-
-app.post('/process-order', async (req, res) => {
-    try {
-        const { name, email, receiptId, timestamp, files } = req.body;
-
-        // Validate incoming data
-        if (!name || !email || !receiptId) {
-            console.error('Missing required fields:', { name, email, receiptId });
-            return res.status(400).send({ success: false, error: 'Missing required fields.' });
-        }
-
-        // Log the receipt data for debugging
-        console.log('Received order:', { name, email, receiptId, timestamp, files });
-
-        // Create a Google Drive folder for the buyer
-        const folderName = `Order-${receiptId}-${name}`;
-        const folderId = await createFolder(folderName);
-
-        // Share the folder with the buyer's email
-        await shareFolder(folderId, email);
-
-        // Upload any files provided to the folder
-        const uploadedFiles = [];
-        if (files && Array.isArray(files)) {
-            for (const file of files) {
-                const { url, name: fileName } = file;
-
-                // Download the file locally
-                const filePath = `./uploads/${fileName}`;
-                const response = await axios({
-                    url,
-                    method: 'GET',
-                    responseType: 'stream',
-                });
-                const writer = fs.createWriteStream(filePath);
-                response.data.pipe(writer);
-
-                await new Promise((resolve, reject) => {
-                    writer.on('finish', resolve);
-                    writer.on('error', reject);
-                });
-
-                // Upload to Google Drive
-                const fileId = await uploadFile(filePath, fileName, folderId);
-                uploadedFiles.push({ fileName, fileId });
-
-                // Clean up local file
-                fs.unlinkSync(filePath);
+        db.get(`SELECT * FROM requests WHERE id = ?`, [id], async (err, row) => {
+            if (err) {
+                console.error('Database Error:', err.message);
+                return res.status(500).send({ success: false, error: 'Database error occurred.' });
             }
-        }
 
-        // Respond to Make with success
-        res.status(200).send({
-            success: true,
-            message: 'Order processed successfully.',
-            folderId,
-            uploadedFiles,
+            if (!row) {
+                console.error('Invalid or expired link.');
+                return res.status(404).send({ success: false, error: 'Invalid or expired link.' });
+            }
+
+            console.log(`Validated ID ${id} for ${row.name}`);
+
+            const folderName = `Order-${row.receiptId}-${row.name}`;
+            const folderId = await createFolder(folderName);
+
+            // Share folder with your personal email
+            const personalEmail = process.env.PERSONAL_EMAIL;
+            await shareFolder(folderId, personalEmail);
+
+            const uploadedFiles = [];
+            for (const file of req.files) {
+                const fileId = await uploadFile(file.path, file.originalname, folderId);
+                uploadedFiles.push({ fileName: file.originalname, fileId });
+                fs.unlinkSync(file.path); // Clean up local files
+            }
+
+            db.run(`UPDATE requests SET status = ? WHERE id = ?`, ['Completed', id], (err) => {
+                if (err) {
+                    console.error('Database Update Error:', err.message);
+                } else {
+                    console.log(`Request ${id} marked as completed.`);
+                }
+            });
+
+            res.status(200).send({
+                success: true,
+                message: 'Files uploaded successfully.',
+                files: uploadedFiles,
+            });
         });
     } catch (error) {
-        console.error(`Error processing order: ${error.message}`);
+        console.error(`Error processing upload: ${error.message}`);
         res.status(500).send({ success: false, error: error.message });
     }
 });
 
-// Start server
+// `/upload-form/:id` Endpoint
+app.get('/upload-form/:id', (req, res) => {
+    const { id } = req.params;
+
+    db.get(`SELECT * FROM requests WHERE id = ?`, [id], (err, row) => {
+        if (err) {
+            console.error('Database Error:', err.message);
+            return res.status(500).send('An error occurred.');
+        }
+
+        if (!row) {
+            return res.status(404).send('Invalid or expired link.');
+        }
+
+        // Dynamically render the form
+        res.send(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Upload Your Files</title>
+            </head>
+            <body>
+                <h1>Upload Your Files</h1>
+                <form action="/upload" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="id" value="${id}">
+                    <label for="files">Select Files:</label>
+                    <input type="file" name="files" multiple required><br><br>
+                    <button type="submit">Upload</button>
+                </form>
+            </body>
+            </html>
+        `);
+    });
+});
+
+// Start the server
 app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
 });
