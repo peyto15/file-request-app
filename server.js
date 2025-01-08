@@ -95,31 +95,20 @@ app.post('/process-order', async (req, res) => {
         const { name, email, receiptId, timestamp } = req.body;
 
         if (!name || !email || !receiptId) {
-            console.error('Missing required fields:', { name, email, receiptId });
             return res.status(400).send({ success: false, error: 'Missing required fields.' });
         }
 
-        console.log('Received order:', { name, email, receiptId, timestamp });
-
-        // Generate unique ID for the upload form
         const uniqueId = crypto.randomUUID();
+        const createdAt = timestamp || new Date().toISOString();
 
-        // Save order to database
-        db.run(
-            `INSERT INTO requests (id, name, email, receiptId, timestamp, status) VALUES (?, ?, ?, ?, ?, ?)`,
-            [uniqueId, name, email, receiptId, timestamp || new Date().toISOString(), 'Pending'],
-            (err) => {
-                if (err) {
-                    console.error('Database Error:', err.message);
-                    return res.status(500).send({ success: false, error: 'Failed to save record.' });
-                }
-                console.log(`Order saved for ${name} with ID ${uniqueId}`);
-            }
+        // Save order to PostgreSQL
+        await db.query(
+            `INSERT INTO requests (id, name, email, receiptId, timestamp, status)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [uniqueId, name, email, receiptId, createdAt, 'Pending']
         );
 
-        // Generate upload link
-        const uploadLink = `https://file-request-app.onrender.com/upload-form/${uniqueId}`;
-
+        const uploadLink = `https://your-app.onrender.com/upload-form/${uniqueId}`;
         res.status(200).send({
             success: true,
             message: 'Order processed successfully.',
@@ -131,11 +120,11 @@ app.post('/process-order', async (req, res) => {
     }
 });
 
+
 // `/upload` Endpoint
 app.post('/upload', (req, res, next) => {
     upload.array('files', 10)(req, res, (err) => {
         if (err) {
-            console.error('Multer Error:', err);
             return res.status(500).send({ success: false, error: err.message });
         }
         next();
@@ -144,52 +133,39 @@ app.post('/upload', (req, res, next) => {
     try {
         const { id } = req.body;
 
-        db.get(`SELECT * FROM requests WHERE id = ?`, [id], async (err, row) => {
-            if (err) {
-                console.error('Database Error:', err.message);
-                return res.status(500).send({ success: false, error: 'Database error occurred.' });
-            }
+        const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
+        if (rows.length === 0) {
+            return res.status(404).send({ success: false, error: 'Invalid or expired link.' });
+        }
 
-            if (!row) {
-                console.error('Invalid or expired link.');
-                return res.status(404).send({ success: false, error: 'Invalid or expired link.' });
-            }
+        const request = rows[0];
+        const folderName = `Order-${request.receiptid}-${request.name}`;
+        const folderId = await createFolder(folderName);
 
-            console.log(`Validated ID ${id} for ${row.name}`);
+        // Share folder with your personal email
+        await shareFolder(folderId, process.env.PERSONAL_EMAIL);
 
-            const folderName = `Order-${row.receiptId}-${row.name}`;
-            const folderId = await createFolder(folderName);
+        const uploadedFiles = [];
+        for (const file of req.files) {
+            const fileId = await uploadFile(file.path, file.originalname, folderId);
+            uploadedFiles.push({ fileName: file.originalname, fileId });
+            fs.unlinkSync(file.path);
+        }
 
-            // Share folder with your personal email
-            const personalEmail = process.env.PERSONAL_EMAIL;
-            await shareFolder(folderId, personalEmail);
+        // Update status to "Completed"
+        await db.query(`UPDATE requests SET status = $1 WHERE id = $2`, ['Completed', id]);
 
-            const uploadedFiles = [];
-            for (const file of req.files) {
-                const fileId = await uploadFile(file.path, file.originalname, folderId);
-                uploadedFiles.push({ fileName: file.originalname, fileId });
-                fs.unlinkSync(file.path); // Clean up local files
-            }
-
-            db.run(`UPDATE requests SET status = ? WHERE id = ?`, ['Completed', id], (err) => {
-                if (err) {
-                    console.error('Database Update Error:', err.message);
-                } else {
-                    console.log(`Request ${id} marked as completed.`);
-                }
-            });
-
-            res.status(200).send({
-                success: true,
-                message: 'Files uploaded successfully.',
-                files: uploadedFiles,
-            });
+        res.status(200).send({
+            success: true,
+            message: 'Files uploaded successfully.',
+            files: uploadedFiles,
         });
     } catch (error) {
         console.error(`Error processing upload: ${error.message}`);
         res.status(500).send({ success: false, error: error.message });
     }
 });
+
 
 // `/upload-form/:id` Endpoint
 app.get('/upload-form/:id', (req, res) => {

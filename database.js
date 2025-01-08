@@ -1,32 +1,45 @@
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
+require('dotenv').config();
+
+// Create a new PostgreSQL connection pool
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL, // Your PostgreSQL connection string
+    ssl: {
+        rejectUnauthorized: false, // Use this if your provider requires SSL (e.g., Heroku)
+    },
+});
+
+// Helper function to query the database
+const query = async (text, params) => {
+    try {
+        const res = await pool.query(text, params);
+        return res.rows;
+    } catch (err) {
+        console.error('Database query error:', err.stack);
+        throw err;
+    }
+};
 
 // Initialize the database
-const db = new sqlite3.Database('./file_request.db', (err) => {
-    if (err) {
-        console.error('Error connecting to database:', err.message);
-    } else {
-        console.log('Connected to SQLite database.');
+const init = async () => {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS requests (
+                id UUID PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                receiptId TEXT NOT NULL,
+                timestamp TIMESTAMP NOT NULL,
+                status TEXT DEFAULT 'Pending'
+            );
+        `);
+        console.log('Database initialized.');
+    } catch (err) {
+        console.error('Error initializing database:', err.stack);
     }
-});
+};
 
-// Create the table for storing records
-db.serialize(() => {
-    db.run(`
-        CREATE TABLE IF NOT EXISTS requests (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            email TEXT,
-            receiptId TEXT,
-            timestamp TEXT,
-            status TEXT DEFAULT 'Pending'
-        )
-    `, (err) => {
-        if (err) {
-            console.error('Error creating table:', err.message);
-        } else {
-            console.log('Requests table ready.');
-        }
-    });
-});
+// Call the init function to create the table if not exists
+init();
 
-module.exports = db;
+module.exports = { query };
