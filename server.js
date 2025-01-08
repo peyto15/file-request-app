@@ -168,16 +168,15 @@ app.post('/upload', (req, res, next) => {
 
 
 // `/upload-form/:id` Endpoint
-app.get('/upload-form/:id', (req, res) => {
+app.get('/upload-form/:id', async (req, res) => {
     const { id } = req.params;
 
-    db.get(`SELECT * FROM requests WHERE id = ?`, [id], (err, row) => {
-        if (err) {
-            console.error('Database Error:', err.message);
-            return res.status(500).send('An error occurred.');
-        }
+    try {
+        // Query the database for the specific ID
+        const result = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
 
-        if (!row) {
+        // Check if the ID exists in the database
+        if (result.rows.length === 0) {
             return res.status(404).send('Invalid or expired link.');
         }
 
@@ -201,7 +200,10 @@ app.get('/upload-form/:id', (req, res) => {
             </body>
             </html>
         `);
-    });
+    } catch (err) {
+        console.error('Database Error:', err.message);
+        res.status(500).send('An error occurred.');
+    }
 });
 
 // Start the server
