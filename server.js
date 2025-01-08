@@ -172,15 +172,21 @@ app.get('/upload-form/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
-        // Query the database for the specific ID
         const result = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
-
-        // Check if the ID exists in the database
-        if (result.rows.length === 0) {
+        
+        // Log the result to understand the structure
+        console.log('Database Query Result:', result);
+        
+        // Add defensive checks for result and rows
+        if (!result || !result.rows || result.rows.length === 0) {
+            console.error('No matching ID found.');
             return res.status(404).send('Invalid or expired link.');
         }
 
-        // Dynamically render the form
+        const row = result.rows[0];
+        console.log(`Valid request found:`, row);
+
+        // Render the form
         res.send(`
             <!DOCTYPE html>
             <html lang="en">
@@ -201,10 +207,21 @@ app.get('/upload-form/:id', async (req, res) => {
             </html>
         `);
     } catch (err) {
-        console.error('Database Error:', err.message);
+        console.error('Database Error:', err.stack);
         res.status(500).send('An error occurred.');
     }
 });
+
+
+app.get('/test-db', async (req, res) => {
+    try {
+        const result = await db.query('SELECT NOW()');
+        res.send(result);
+    } catch (err) {
+        res.status(500).send(`Database connection failed: ${err.message}`);
+    }
+});
+
 
 // Start the server
 app.listen(port, () => {
