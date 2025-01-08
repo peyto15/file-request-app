@@ -172,21 +172,23 @@ app.get('/upload-form/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
+        // Query the database for the specific ID
         const result = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
-        
-        // Log the result to understand the structure
-        console.log('Database Query Result:', result);
-        
-        // Add defensive checks for result and rows
+
+        // Log the result for debugging
+        console.log('Query Result:', result);
+        console.log('Result Rows:', result.rows);
+
+        // Validate the query result
         if (!result || !result.rows || result.rows.length === 0) {
             console.error('No matching ID found.');
             return res.status(404).send('Invalid or expired link.');
         }
 
         const row = result.rows[0];
-        console.log(`Valid request found:`, row);
+        console.log(`Valid request found for ID ${id}:`, row);
 
-        // Render the form
+        // Dynamically render the form
         res.send(`
             <!DOCTYPE html>
             <html lang="en">
