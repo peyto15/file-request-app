@@ -133,8 +133,9 @@ app.post('/upload', (req, res, next) => {
     try {
         const { id } = req.body;
 
+        // Query the database for the specific request
         const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
-        if (rows.length === 0) {
+        if (!rows || rows.length === 0) {
             return res.status(404).send({ success: false, error: 'Invalid or expired link.' });
         }
 
@@ -152,8 +153,12 @@ app.post('/upload', (req, res, next) => {
             fs.unlinkSync(file.path);
         }
 
-        // Update status to "Completed"
-        await db.query(`UPDATE requests SET status = $1 WHERE id = $2`, ['Completed', id]);
+        // Update the status to "Completed" and set the new timestamp
+        const completedTimestamp = new Date().toISOString();
+        await db.query(
+            `UPDATE requests SET status = $1, timestamp = $2 WHERE id = $3`,
+            ['Completed', completedTimestamp, id]
+        );
 
         res.status(200).send({
             success: true,
