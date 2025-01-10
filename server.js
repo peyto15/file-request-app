@@ -9,6 +9,10 @@ const cron = require('node-cron');
 require('dotenv').config();
 
 const app = express();
+
+// Allowed file types for server-side validation
+const allowedFileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+
 const upload = multer({
     dest: 'uploads/',
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
