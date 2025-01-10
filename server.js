@@ -6,8 +6,6 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const db = require('./database');
 const cron = require('node-cron');
-import Cropper from 'cropperjs';
-import 'cropperjs/dist/cropper.min.css';
 require('dotenv').config();
 
 const app = express();
