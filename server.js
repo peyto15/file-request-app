@@ -247,7 +247,17 @@ const sendResetEmail = async (recipientEmail, id) => {
         html: `
             <h1>Reset Upload Request</h1>
             <p>A restart has been requested. Click the button below to reset the upload process:</p>
-            <a href="${resetLink}" style="padding: 10px 20px; color: #fff; background-color: #007BFF; text-decoration: none; border-radius: 5px;">Reset Upload</a>
+            <a href="${resetLink}" style="
+                display: inline-block;
+                padding: 12px 20px; 
+                font-size: 16px; 
+                color: #fff; 
+                background-color: #007BFF; 
+                text-decoration: none; 
+                border-radius: 6px;
+                text-align: center;
+                border: 1px solid #007BFF;
+                font-family: Arial, sans-serif;">Reset Upload</a>
         `,
     };
 
@@ -258,6 +268,49 @@ const sendResetEmail = async (recipientEmail, id) => {
         console.error('Error sending reset email:', err.message);
     }
 };
+
+// `/reset-upload/:id` Endpoint
+app.get('/reset-upload/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        // Fetch the request from the database
+        const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
+        if (!rows || rows.length === 0) {
+            return res.status(404).send('Invalid or expired link.');
+        }
+
+        const request = rows[0];
+        const folderName = `Order-${request.receiptid}-${request.name}`;
+        const folderId = await findFolder(folderName);
+
+        if (!folderId) {
+            return res.status(404).send('Google Drive folder not found.');
+        }
+
+        // List and delete all files in the folder
+        const listResponse = await drive.files.list({
+            q: `'${folderId}' in parents`,
+            fields: 'files(id, name)',
+        });
+
+        for (const file of listResponse.data.files) {
+            await drive.files.delete({ fileId: file.id });
+            console.log(`Deleted file: ${file.name}`);
+        }
+
+        // Reset the status to "Pending" in the database
+        await db.query(`UPDATE requests SET status = $1 WHERE id = $2`, ['Pending', id]);
+
+        res.send(`
+            <h1>Upload Reset Successful</h1>
+            <p>The upload process has been reset. The user can now re-upload their files.</p>
+        `);
+    } catch (err) {
+        console.error('Error resetting upload:', err.message);
+        res.status(500).send('An error occurred while resetting the upload process.');
+    }
+});
 
 // Start the server
 app.listen(port, () => {
