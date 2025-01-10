@@ -231,6 +231,23 @@ app.get('/test-db', async (req, res) => {
 });
 
 
+function getCentralTimeTimestamp() {
+    const now = new Date();
+
+    // Format the current date-time in Central Time
+    const formattedTimestamp = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago', // Central Time zone with DST adjustment
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: true,
+    }).format(now);
+
+    return formattedTimestamp;
+}
+
 // Start the server
 app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
