@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const db = require('./database');
+const cron = require('node-cron');
 require('dotenv').config();
 
 const app = express();
@@ -129,14 +130,22 @@ app.post('/process-order', async (req, res) => {
 // `/upload-form/:id` Endpoint
 app.get('/upload-form/:id', async (req, res) => {
     const { id } = req.params;
+
     try {
+        // Query the database for the specific ID
         const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
+
         if (!rows || rows.length === 0) {
+            console.error('No matching ID found.');
             return res.status(404).send('Invalid or expired link.');
         }
 
         const row = rows[0];
+        console.log(`Valid request found for ID ${id}:`, row);
+
+        // Check the request status
         if (row.status === 'Completed') {
+            // Completed status
             res.send(`
                 <h1>Upload Already Completed</h1>
                 <p>Your upload has been successfully completed.</p>
@@ -145,7 +154,15 @@ app.get('/upload-form/:id', async (req, res) => {
                     <button type="submit">Request Restart</button>
                 </form>
             `);
+        } else if (row.status === 'completed-reset-requested') {
+            // Completed-Reset-Requested status
+            res.send(`
+                <h1>Reset Request Under Review</h1>
+                <p>Your reset request has been sent and is under review by the seller.</p>
+                <p>If you have further questions, please contact the seller at <a href="mailto:${process.env.PERSONAL_EMAIL}">${process.env.PERSONAL_EMAIL}</a>.</p>
+            `);
         } else {
+            // Pending or other statuses
             res.send(`
                 <h1>Upload Your Files</h1>
                 <form action="/upload" method="POST" enctype="multipart/form-data">
@@ -174,9 +191,11 @@ app.post('/request-restart', async (req, res) => {
         const request = rows[0];
         await sendResetEmail(process.env.PERSONAL_EMAIL, id);
 
+        // Display confirmation message
         res.send(`
-            <h1>Restart Request Sent</h1>
-            <p>Your restart request has been sent. Please wait for confirmation.</p>
+            <h1>Reset Request Sent</h1>
+            <p>Your reset request has been sent and is under review by the seller.</p>
+            <p>If you have further questions, please contact the seller at <a href="mailto:${process.env.PERSONAL_EMAIL}">${process.env.PERSONAL_EMAIL}</a>.</p>
         `);
     } catch (err) {
         console.error('Error processing restart request:', err.message);
@@ -311,6 +330,24 @@ app.get('/reset-upload/:id', async (req, res) => {
         res.status(500).send('An error occurred while resetting the upload process.');
     }
 });
+
+// Schedule task to revert statuses every day at midnight
+cron.schedule('0 0 * * *', async () => {
+    console.log('Running scheduled task to revert reset requests.');
+    try {
+        const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+        const result = await db.query(
+            `UPDATE requests 
+             SET status = 'Completed' 
+             WHERE status = 'completed-reset-requested' AND timestamp < $1`,
+            [fiveDaysAgo]
+        );
+        console.log(`Reverted ${result.rowCount} requests to 'Completed' status.`);
+    } catch (err) {
+        console.error('Error in scheduled task:', err.message);
+    }
+});
+
 
 // Start the server
 app.listen(port, () => {
