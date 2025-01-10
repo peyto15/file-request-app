@@ -6,6 +6,8 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const db = require('./database');
 const cron = require('node-cron');
+import Cropper from 'cropperjs';
+import 'cropperjs/dist/cropper.min.css';
 require('dotenv').config();
 
 const app = express();
@@ -206,7 +208,20 @@ app.get('/upload-form/:id', async (req, res) => {
                 <head>
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Upload Your Files</title>
+                    <title>Upload and Edit Your Files</title>
+                    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.3/cropper.min.css" />
+                    <style>
+                        #preview-container {
+                            margin-top: 20px;
+                        }
+                        #preview-image {
+                            max-width: 100%;
+                            height: auto;
+                        }
+                        #crop-buttons {
+                            margin-top: 10px;
+                        }
+                    </style>
                     <script>
                         const allowedFileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
                         const maxFileSize = 10 * 1024 * 1024; // 10MB
@@ -237,13 +252,68 @@ app.get('/upload-form/:id', async (req, res) => {
                     </script>
                 </head>
                 <body>
-                    <h1>Upload Your Files</h1>
-                    <form id="uploadForm" action="/upload" method="POST" enctype="multipart/form-data" onsubmit="validateFiles(event)">
+                    <h1>Upload and Edit Your Files</h1>
+                    <form id="upload-form" action="/upload" method="POST" enctype="multipart/form-data" onsubmit="validateFiles(event)">
                         <input type="hidden" name="id" value="${id}">
                         <label for="files">Select Files:</label>
-                        <input type="file" name="files" id="files" multiple required><br><br>
+                        <input type="file" id="files" name="files" accept="image/*" multiple required><br><br>
+                        <button type="button" id="preview-btn">Preview</button>
+                        <div id="preview-container">
+                            <img id="preview-image" style="display:none;">
+                            <div id="crop-buttons" style="display:none;">
+                                <button type="button" id="crop-btn">Crop</button>
+                                <button type="button" id="reset-btn">Reset</button>
+                            </div>
+                        </div>
+                        <br>
                         <button type="submit">Upload</button>
                     </form>
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.3/cropper.min.js"></script>
+                    <script>
+                        const previewBtn = document.getElementById('preview-btn');
+                        const filesInput = document.getElementById('files');
+                        const previewImage = document.getElementById('preview-image');
+                        const cropButtons = document.getElementById('crop-buttons');
+                        let cropper;
+
+                        previewBtn.addEventListener('click', () => {
+                            const file = filesInput.files[0];
+                            if (!file) {
+                                alert('Please select an image file to preview.');
+                                return;
+                            }
+
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                previewImage.src = reader.result;
+                                previewImage.style.display = 'block';
+
+                                if (cropper) cropper.destroy(); // Destroy previous cropper instance
+                                cropper = new Cropper(previewImage, {
+                                    aspectRatio: 1,
+                                    viewMode: 2,
+                                });
+                                cropButtons.style.display = 'block';
+                            };
+                            reader.readAsDataURL(file);
+                        });
+
+                        document.getElementById('crop-btn').addEventListener('click', () => {
+                            if (!cropper) return;
+                            const croppedCanvas = cropper.getCroppedCanvas();
+                            croppedCanvas.toBlob((blob) => {
+                                const newFile = new File([blob], 'cropped-image.jpg', { type: 'image/jpeg' });
+                                const dataTransfer = new DataTransfer();
+                                dataTransfer.items.add(newFile);
+                                filesInput.files = dataTransfer.files;
+                                alert('Image cropped and ready for upload!');
+                            });
+                        });
+
+                        document.getElementById('reset-btn').addEventListener('click', () => {
+                            if (cropper) cropper.reset();
+                        });
+                    </script>
                 </body>
                 </html>
             `);
