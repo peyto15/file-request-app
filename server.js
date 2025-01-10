@@ -33,9 +33,32 @@ const transporter = nodemailer.createTransport({
     },
 });
 
+// Helper: Find existing folder in Google Drive
+async function findFolder(folderName) {
+    try {
+        const res = await drive.files.list({
+            q: `name='${folderName}' and mimeType='application/vnd.google-apps.folder'`,
+            fields: 'files(id, name)',
+        });
+
+        if (res.data.files.length > 0) {
+            console.log(`Found folder "${folderName}" with ID: ${res.data.files[0].id}`);
+            return res.data.files[0].id;
+        }
+
+        return null;
+    } catch (error) {
+        console.error(`Error finding folder: ${error.message}`);
+        throw new Error('Failed to find folder in Google Drive.');
+    }
+}
+
 // Helper: Create folder in Google Drive
 async function createFolder(folderName) {
     try {
+        const folderId = await findFolder(folderName);
+        if (folderId) return folderId;
+
         const res = await drive.files.create({
             resource: { name: folderName, mimeType: 'application/vnd.google-apps.folder' },
             fields: 'id',
@@ -148,11 +171,13 @@ app.post('/request-restart', async (req, res) => {
             return res.status(404).send('Invalid or expired link.');
         }
 
-        const request  = rows[0];
-        
-        // Send the reset email
+        const request = rows[0];
         await sendResetEmail(process.env.PERSONAL_EMAIL, id);
 
+        res.send(`
+            <h1>Restart Request Sent</h1>
+            <p>Your restart request has been sent. Please wait for confirmation.</p>
+        `);
     } catch (err) {
         console.error('Error processing restart request:', err.message);
         res.status(500).send('An error occurred while processing your request.');
@@ -211,100 +236,18 @@ app.post('/upload', (req, res, next) => {
     }
 });
 
-app.post('/admin/reset-upload', async (req, res) => {
-    const { id } = req.body;
-
-    try {
-        const result = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
-        if (!result || result.length === 0) {
-            return res.status(404).send('Invalid or expired link.');
-        }
-
-        const row = result[0];
-
-        // Find the Google Drive folder for this request
-        const folderName = `Order-${row.receiptid}-${row.name}`;
-        const folderId = await createFolder(folderName); // Assume you already have the folder ID logic
-
-        // List and delete all files in the folder
-        const listResponse = await drive.files.list({
-            q: `'${folderId}' in parents`,
-            fields: 'files(id, name)',
-        });
-
-        for (const file of listResponse.data.files) {
-            await drive.files.delete({ fileId: file.id });
-            console.log(`Deleted file: ${file.name}`);
-        }
-
-        // Reset the status to "Pending" in the database
-        await db.query(`UPDATE requests SET status = $1 WHERE id = $2`, ['Pending', id]);
-
-        res.status(200).send({
-            success: true,
-            message: `Upload process for ID ${id} has been reset.`,
-        });
-    } catch (err) {
-        console.error('Error resetting upload:', err.message);
-        res.status(500).send('An error occurred while resetting the upload process.');
-    }
-});
-
-app.get('/reset-upload/:id', async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        // Fetch the request from the database
-        const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
-        if (!rows || rows.length === 0) {
-            return res.status(404).send('Invalid or expired link.');
-        }
-
-        const request = rows[0];
-        const folderName = `Order-${request.receiptid}-${request.name}`;
-
-        // Fetch the folder ID for this request
-        const folderId = await createFolder(folderName);
-
-        // Delete all files in the folder
-        const listResponse = await drive.files.list({
-            q: `'${folderId}' in parents`,
-            fields: 'files(id, name)',
-        });
-
-        for (const file of listResponse.data.files) {
-            await drive.files.delete({ fileId: file.id });
-            console.log(`Deleted file: ${file.name}`);
-        }
-
-        // Update the database to set status back to 'Pending'
-        await db.query(`UPDATE requests SET status = $1 WHERE id = $2`, ['Pending', id]);
-
-        res.send(`
-            <h1>Upload Reset Successful</h1>
-            <p>The upload process has been reset. The user can now re-upload their files.</p>
-        `);
-    } catch (err) {
-        console.error('Error resetting upload:', err.message);
-        res.status(500).send('An error occurred while resetting the upload.');
-    }
-});
-
+// Helper: Send Reset Email
 const sendResetEmail = async (recipientEmail, id) => {
     const resetLink = `https://file-request-app.onrender.com/reset-upload/${id}`;
 
     const mailOptions = {
         from: `"File Request App" <${process.env.PERSONAL_EMAIL}>`,
-        to: `"Mal Fane" <${process.env.PERSONAL_EMAIL}>`,
+        to: `"Admin" <${process.env.PERSONAL_EMAIL}>`,
         subject: `Reset Upload for Order ID: ${id}`,
         html: `
             <h1>Reset Upload Request</h1>
-            <p>The upload process for an order has been completed, but someone has requested to restart the upload process, click the button below to reset their uploads:</p>
-            <a href="${resetLink}" style="display: inline-block; padding: 10px 20px; font-size: 16px; color: #fff; background-color: #007BFF; text-decoration: none; border-radius: 5px;">
-                Reset Upload
-            </a>
-            <p>Or copy and paste this link into your browser if the hyperlink is not working:</p>
-            <p>${resetLink}</p>
+            <p>A restart has been requested. Click the button below to reset the upload process:</p>
+            <a href="${resetLink}" style="padding: 10px 20px; color: #fff; background-color: #007BFF; text-decoration: none; border-radius: 5px;">Reset Upload</a>
         `,
     };
 
