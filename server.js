@@ -134,7 +134,6 @@ app.post('/upload', (req, res, next) => {
     try {
         const { id } = req.body;
 
-        // Query the database for the specific request
         const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
         if (!rows || rows.length === 0) {
             return res.status(404).send({ success: false, error: 'Invalid or expired link.' });
@@ -154,16 +153,13 @@ app.post('/upload', (req, res, next) => {
             fs.unlinkSync(file.path);
         }
 
-        // Get current time in Central Time
-        const now = new Date();
-        const centralTimeZone = 'America/Chicago'; // Central Time zone
-        const centralTime = utcToZonedTime(now, centralTimeZone); // Convert UTC to Central Time
-        const formattedTimestamp = format(centralTime, "yyyy-MM-dd'T'HH:mm:ssXXX", { timeZone: centralTimeZone });
+        // Get current Central Time timestamp
+        const centralTimestamp = getCentralTimeTimestamp();
 
-        // Update the status to "Completed" and set the new Central Time timestamp
+        // Update the status to "Completed" and set the Central Time timestamp
         await db.query(
             `UPDATE requests SET status = $1, timestamp = $2 WHERE id = $3`,
-            ['Completed', formattedTimestamp, id]
+            ['Completed', centralTimestamp, id]
         );
 
         res.status(200).send({
