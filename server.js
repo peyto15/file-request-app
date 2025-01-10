@@ -183,12 +183,18 @@ app.get('/upload-form/:id', async (req, res) => {
 app.post('/request-restart', async (req, res) => {
     const { id } = req.body;
     try {
+        // Query the database for the request ID
         const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
         if (!rows || rows.length === 0) {
             return res.status(404).send('Invalid or expired link.');
         }
 
         const request = rows[0];
+
+        // Update the status to 'completed-reset-requested' in the database
+        await db.query(`UPDATE requests SET status = $1 WHERE id = $2`, ['completed-reset-requested', id]);
+
+        // Send the reset email to the seller
         await sendResetEmail(process.env.PERSONAL_EMAIL, id);
 
         // Display confirmation message
