@@ -6,6 +6,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const db = require('./database');
+const { format, utcToZonedTime } = require('date-fns-tz');
 require('dotenv').config();
 
 const app = express();
@@ -153,11 +154,16 @@ app.post('/upload', (req, res, next) => {
             fs.unlinkSync(file.path);
         }
 
-        // Update the status to "Completed" and set the new timestamp
-        const completedTimestamp = new Date().toISOString();
+        // Get current time in Central Time
+        const now = new Date();
+        const centralTimeZone = 'America/Chicago'; // Central Time zone
+        const centralTime = utcToZonedTime(now, centralTimeZone); // Convert UTC to Central Time
+        const formattedTimestamp = format(centralTime, "yyyy-MM-dd'T'HH:mm:ssXXX", { timeZone: centralTimeZone });
+
+        // Update the status to "Completed" and set the new Central Time timestamp
         await db.query(
             `UPDATE requests SET status = $1, timestamp = $2 WHERE id = $3`,
-            ['Completed', completedTimestamp, id]
+            ['Completed', formattedTimestamp, id]
         );
 
         res.status(200).send({
