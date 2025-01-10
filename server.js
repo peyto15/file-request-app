@@ -154,7 +154,7 @@ app.get('/upload-form/:id', async (req, res) => {
                     <button type="submit">Request Restart</button>
                 </form>
             `);
-        } else if (row.status === 'completed-reset-requested') {
+        } else if (row.status === 'Completed-Reset-Requested') {
             // Completed-Reset-Requested status
             res.send(`
                 <h1>Reset Request Under Review</h1>
@@ -191,8 +191,8 @@ app.post('/request-restart', async (req, res) => {
 
         const request = rows[0];
 
-        // Update the status to 'completed-reset-requested' in the database
-        await db.query(`UPDATE requests SET status = $1 WHERE id = $2`, ['completed-reset-requested', id]);
+        // Update the status to 'Completed-Reset-Requested' in the database
+        await db.query(`UPDATE requests SET status = $1 WHERE id = $2`, ['Completed-Reset-Requested', id]);
 
         // Send the reset email to the seller
         await sendResetEmail(process.env.PERSONAL_EMAIL, id);
@@ -345,7 +345,7 @@ cron.schedule('0 0 * * *', async () => {
         const result = await db.query(
             `UPDATE requests 
              SET status = 'Completed' 
-             WHERE status = 'completed-reset-requested' AND timestamp < $1`,
+             WHERE status = 'Completed-Reset-Requested' AND timestamp < $1`,
             [fiveDaysAgo]
         );
         console.log(`Reverted ${result.rowCount} requests to 'Completed' status.`);
