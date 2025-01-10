@@ -9,7 +9,17 @@ const cron = require('node-cron');
 require('dotenv').config();
 
 const app = express();
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({
+    dest: 'uploads/',
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    fileFilter: (req, file, cb) => {
+        if (allowedFileTypes.includes(file.mimetype)) {
+            cb(null, true); // Accept file
+        } else {
+            cb(new Error('Invalid file type. Only JPEG, PNG, and PDF files are allowed.'));
+        }
+    },
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 const port = process.env.PORT || 3000;
@@ -147,30 +157,80 @@ app.get('/upload-form/:id', async (req, res) => {
         if (row.status === 'Completed') {
             // Completed status
             res.send(`
-                <h1>Upload Already Completed</h1>
-                <p>Your upload has been successfully completed.</p>
-                <form action="/request-restart" method="POST">
-                    <input type="hidden" name="id" value="${id}">
-                    <button type="submit">Request Restart</button>
-                </form>
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Upload Already Completed</title>
+                </head>
+                <body>
+                    <h1>Upload Already Completed</h1>
+                    <p>Your upload has been successfully completed.</p>
+                    <form action="/request-restart" method="POST">
+                        <input type="hidden" name="id" value="${id}">
+                        <button type="submit">Request Restart</button>
+                    </form>
+                </body>
+                </html>
             `);
         } else if (row.status === 'Completed-Reset-Requested') {
             // Completed-Reset-Requested status
             res.send(`
-                <h1>Reset Request Under Review</h1>
-                <p>Your reset request has been sent and is under review by the seller.</p>
-                <p>If you have further questions, please contact the seller at <a href="mailto:${process.env.PERSONAL_EMAIL}">${process.env.PERSONAL_EMAIL}</a>.</p>
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Reset Request Under Review</title>
+                </head>
+                <body>
+                    <h1>Reset Request Under Review</h1>
+                    <p>Your reset request has been sent and is under review by the seller.</p>
+                    <p>If you have further questions, please contact the seller at <a href="mailto:${process.env.PERSONAL_EMAIL}">${process.env.PERSONAL_EMAIL}</a>.</p>
+                </body>
+                </html>
             `);
         } else {
             // Pending or other statuses
             res.send(`
-                <h1>Upload Your Files</h1>
-                <form action="/upload" method="POST" enctype="multipart/form-data">
-                    <input type="hidden" name="id" value="${id}">
-                    <label for="files">Select Files:</label>
-                    <input type="file" name="files" multiple required><br><br>
-                    <button type="submit">Upload</button>
-                </form>
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Upload Your Files</title>
+                    <script>
+                        const allowedFileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+                        const maxFileSize = 10 * 1024 * 1024; // 10MB
+
+                        function validateFiles(event) {
+                            const files = document.getElementById('files').files;
+                            for (let file of files) {
+                                if (!allowedFileTypes.includes(file.type)) {
+                                    alert(\`Invalid file type: \${file.name}. Only JPEG, PNG, and PDF files are allowed.\`);
+                                    event.preventDefault();
+                                    return;
+                                }
+                                if (file.size > maxFileSize) {
+                                    alert(\`File too large: \${file.name}. Maximum size is 10MB.\`);
+                                    event.preventDefault();
+                                    return;
+                                }
+                            }
+                        }
+                    </script>
+                </head>
+                <body>
+                    <h1>Upload Your Files</h1>
+                    <form id="uploadForm" action="/upload" method="POST" enctype="multipart/form-data" onsubmit="validateFiles(event)">
+                        <input type="hidden" name="id" value="${id}">
+                        <label for="files">Select Files:</label>
+                        <input type="file" name="files" id="files" multiple required><br><br>
+                        <button type="submit">Upload</button>
+                    </form>
+                </body>
+                </html>
             `);
         }
     } catch (err) {
