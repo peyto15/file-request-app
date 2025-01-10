@@ -15,12 +15,15 @@ const allowedFileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
 
 const upload = multer({
     dest: 'uploads/',
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    limits: {
+        fileSize: 10 * 1024 * 1024,
+        files: 9,
+    }, // 10MB + 9 files
     fileFilter: (req, file, cb) => {
         if (allowedFileTypes.includes(file.mimetype)) {
             cb(null, true); // Accept file
         } else {
-            cb(new Error('Invalid file type. Only JPEG, PNG, and PDF files are allowed.'));
+            cb(new Error('Invalid file type: ${file.mimetype}. Only JPEG, PNG, and PDF files are allowed.'));
         }
     },
 });
@@ -210,6 +213,14 @@ app.get('/upload-form/:id', async (req, res) => {
 
                         function validateFiles(event) {
                             const files = document.getElementById('files').files;
+
+                            // Check file count
+                            if (files.length > 9) {
+                                alert('You can only upload up to 9 files at a time.');
+                                event.preventDefault();
+                                return;
+                            }
+
                             for (let file of files) {
                                 if (!allowedFileTypes.includes(file.type)) {
                                     alert(\`Invalid file type: \${file.name}. Only JPEG, PNG, and PDF files are allowed.\`);
@@ -277,6 +288,12 @@ app.post('/request-restart', async (req, res) => {
 app.post('/upload', (req, res, next) => {
     upload.array('files', 10)(req, res, (err) => {
         if (err) {
+            if (err.code === 'LIMIT_FILE_COUNT') {
+                return res.status(400).send({ success: false, error: 'You can only upload up to 9 files.' });
+            }
+            if (err.message) {
+                return res.status(400).send({ success: false, error: err.message });
+            }
             return res.status(500).send({ success: false, error: err.message });
         }
         next();
@@ -312,7 +329,10 @@ app.post('/upload', (req, res, next) => {
             hour12: true,
         }).format(new Date());
 
-        await db.query(`UPDATE requests SET status = $1, timestamp = $2 WHERE id = $3`, ['Completed', centralTimestamp, id]);
+        await db.query(
+            `UPDATE requests SET status = $1, timestamp = $2 WHERE id = $3`,
+            ['Completed', centralTimestamp, id]
+        );
 
         res.status(200).send({
             success: true,
