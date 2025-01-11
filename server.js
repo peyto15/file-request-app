@@ -213,6 +213,7 @@ app.get('/upload-form/:id', async (req, res) => {
                     <title>Upload Your Files</title>
                     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
                     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.3/cropper.min.css" />
+                    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
                     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.3/cropper.min.js"></script>
                 </head>
                 <body>
@@ -232,37 +233,14 @@ app.get('/upload-form/:id', async (req, res) => {
                         </form>
                     </div>
 
-                    <!-- Modal for cropping -->
-                    <div class="modal fade" id="cropModal" tabindex="-1" aria-labelledby="cropModalLabel" aria-hidden="true">
-                        <div class="modal-dialog modal-lg">
-                            <div class="modal-content">
-                                <div class="modal-header">
-                                    <h5 class="modal-title" id="cropModalLabel">Crop Your Image</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                </div>
-                                <div class="modal-body">
-                                    <div id="crop-container">
-                                        <img id="crop-image" src="#" alt="Crop Preview" style="max-width: 100%;">
-                                    </div>
-                                </div>
-                                <div class="modal-footer">
-                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                    <button type="button" id="save-crop" class="btn btn-success">Save Crop</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     <script>
                         const dropZone = document.getElementById('drop-zone');
                         const fileInput = document.getElementById('files');
                         const fileList = document.getElementById('file-list');
                         const allowedFileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
                         const maxFileSize = 10 * 1024 * 1024; // 10MB
-                        const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
-                        const cropImage = document.getElementById('crop-image');
-                        let cropper;
 
+                        // Drag and drop functionality
                         dropZone.addEventListener('click', () => fileInput.click());
                         dropZone.addEventListener('dragover', (event) => {
                             event.preventDefault();
@@ -272,12 +250,13 @@ app.get('/upload-form/:id', async (req, res) => {
                         dropZone.addEventListener('drop', (event) => {
                             event.preventDefault();
                             dropZone.classList.remove('bg-light');
-                            handleFiles(event.dataTransfer.files);
+                            fileInput.files = event.dataTransfer.files;
+                            displayFiles(fileInput.files);
                         });
 
-                        fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+                        fileInput.addEventListener('change', () => displayFiles(fileInput.files));
 
-                        function handleFiles(files) {
+                        function displayFiles(files) {
                             fileList.innerHTML = '';
                             Array.from(files).forEach((file, index) => {
                                 if (!allowedFileTypes.includes(file.type)) {
@@ -294,25 +273,10 @@ app.get('/upload-form/:id', async (req, res) => {
                                     <span>\${file.name}</span>
                                     <div>
                                         <button type="button" class="btn btn-secondary btn-sm me-2" onclick="openPreviewModal(\${index})">Preview</button>
-                                        <button type="button" class="btn btn-secondary btn-sm" onclick="openCropModal(\${index})">Crop</button>
                                     </div>
                                 \`;
                                 fileList.appendChild(row);
                             });
-                        }
-
-                        function openCropModal(fileIndex) {
-                            const file = fileInput.files[fileIndex];
-                            const reader = new FileReader();
-                            reader.onload = () => {
-                                cropImage.src = reader.result;
-                                cropper = new Cropper(cropImage, {
-                                    aspectRatio: 1,
-                                    viewMode: 2,
-                                });
-                                cropModal.show();
-                            };
-                            reader.readAsDataURL(file);
                         }
 
                         function openPreviewModal(fileIndex) {
@@ -325,15 +289,6 @@ app.get('/upload-form/:id', async (req, res) => {
                             };
                             reader.readAsDataURL(file);
                         }
-
-                        document.getElementById('save-crop').addEventListener('click', () => {
-                            const croppedCanvas = cropper.getCroppedCanvas();
-                            croppedCanvas.toBlob((blob) => {
-                                console.log('Cropped image ready for upload.');
-                                cropModal.hide();
-                                cropper.destroy();
-                            });
-                        });
                     </script>
                 </body>
                 </html>
