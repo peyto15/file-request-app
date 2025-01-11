@@ -145,7 +145,6 @@ app.post('/process-order', async (req, res) => {
 });
 
 
-// `/upload-form/:id` Endpoint
 app.get('/upload-form/:id', async (req, res) => {
     const { id } = req.params;
 
@@ -233,14 +232,37 @@ app.get('/upload-form/:id', async (req, res) => {
                         </form>
                     </div>
 
+                    <!-- Modal for cropping -->
+                    <div class="modal fade" id="cropModal" tabindex="-1" aria-labelledby="cropModalLabel" aria-hidden="true">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="cropModalLabel">Crop Your Image</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div id="crop-container">
+                                        <img id="crop-image" src="#" alt="Crop Preview" style="max-width: 100%;">
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="button" id="save-crop" class="btn btn-success">Save Crop</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <script>
                         const dropZone = document.getElementById('drop-zone');
                         const fileInput = document.getElementById('files');
                         const fileList = document.getElementById('file-list');
-                        const allowedFileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+                        const allowedFileTypes = ['image/jpeg', 'image/png'];
                         const maxFileSize = 10 * 1024 * 1024; // 10MB
+                        const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
+                        const cropImage = document.getElementById('crop-image');
+                        let cropper;
 
-                        // Drag and drop functionality
                         dropZone.addEventListener('click', () => fileInput.click());
                         dropZone.addEventListener('dragover', (event) => {
                             event.preventDefault();
@@ -270,25 +292,37 @@ app.get('/upload-form/:id', async (req, res) => {
                                 const row = document.createElement('div');
                                 row.className = 'd-flex justify-content-between align-items-center mb-2';
                                 row.innerHTML = \`
-                                    <span>\${file.name}</span>
+                                    <span><img src="\${URL.createObjectURL(file)}" style="width: 50px; height: 50px; object-fit: cover;" alt="Thumbnail" class="me-2"> \${file.name}</span>
                                     <div>
-                                        <button type="button" class="btn btn-secondary btn-sm me-2" onclick="openPreviewModal(\${index})">Preview</button>
+                                        <button type="button" class="btn btn-secondary btn-sm me-2" onclick="openCropModal(\${index})">Crop</button>
                                     </div>
                                 \`;
                                 fileList.appendChild(row);
                             });
                         }
 
-                        function openPreviewModal(fileIndex) {
+                        function openCropModal(fileIndex) {
                             const file = fileInput.files[fileIndex];
                             const reader = new FileReader();
                             reader.onload = () => {
-                                const previewWindow = window.open();
-                                previewWindow.document.write(\`<img src="\${reader.result}" style="max-width:100%">\`);
-                                previewWindow.document.close();
+                                cropImage.src = reader.result;
+                                cropper = new Cropper(cropImage, {
+                                    aspectRatio: 1,
+                                    viewMode: 2,
+                                });
+                                cropModal.show();
                             };
                             reader.readAsDataURL(file);
                         }
+
+                        document.getElementById('save-crop').addEventListener('click', () => {
+                            const croppedCanvas = cropper.getCroppedCanvas();
+                            croppedCanvas.toBlob((blob) => {
+                                console.log('Cropped image ready for upload.');
+                                cropModal.hide();
+                                cropper.destroy();
+                            });
+                        });
                     </script>
                 </body>
                 </html>
