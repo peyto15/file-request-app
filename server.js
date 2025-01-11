@@ -169,7 +169,7 @@ app.get('/upload-form/:id', async (req, res) => {
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <title>Upload Already Completed</title>
-                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+                    <link href="https://unpkg.com/bootstrap@4/dist/css/bootstrap.min.css" rel="stylesheet">
                 </head>
                 <body class="text-center">
                     <div class="container mt-5">
@@ -191,7 +191,7 @@ app.get('/upload-form/:id', async (req, res) => {
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <title>Reset Request Under Review</title>
-                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+                    <link href="https://unpkg.com/bootstrap@4/dist/css/bootstrap.min.css" rel="stylesheet">
                 </head>
                 <body class="text-center">
                     <div class="container mt-5">
@@ -211,8 +211,13 @@ app.get('/upload-form/:id', async (req, res) => {
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <title>Upload Your Files</title>
-                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
-                    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.3/cropper.min.css" />
+                    <link href="https://unpkg.com/bootstrap@4/dist/css/bootstrap.min.css" rel="stylesheet">
+                    <link rel="stylesheet" href="https://unpkg.com/cropperjs@1.6.2/dist/cropper.css" />
+                    <style>
+                        .img-container img {
+                            max-width: 100%;
+                        }
+                    </style>
                 </head>
                 <body>
                     <div class="container mt-5">
@@ -232,30 +237,81 @@ app.get('/upload-form/:id', async (req, res) => {
                     </div>
 
                     <!-- Modal for cropping -->
-                    <div class="modal fade" id="cropModal" tabindex="-1" aria-labelledby="cropModalLabel" aria-hidden="true">
-                        <div class="modal-dialog modal-lg">
+                    <div class="modal fade" id="cropModal" tabindex="-1" role="dialog" aria-labelledby="cropModalLabel" aria-hidden="true">
+                        <div class="modal-dialog" role="document">
                             <div class="modal-content">
                                 <div class="modal-header">
                                     <h5 class="modal-title" id="cropModalLabel">Crop Your Image</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                        <span aria-hidden="true">&times;</span>
+                                    </button>
                                 </div>
                                 <div class="modal-body">
-                                    <div id="crop-container">
-                                        <img id="crop-image" src="#" alt="Crop Preview" style="max-width: 100%;">
+                                    <div class="img-container">
+                                        <img id="image" src="#" alt="Picture">
                                     </div>
                                 </div>
                                 <div class="modal-footer">
-                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                    <button type="button" id="save-crop" class="btn btn-success">Save Crop</button>
+                                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                                    <button type="button" class="btn btn-success" id="save-crop">Save Crop</button>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
-                    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.3/cropper.min.js"></script>
+                    <script src="https://unpkg.com/jquery@3/dist/jquery.slim.min.js"></script>
+                    <script src="https://unpkg.com/bootstrap@4/dist/js/bootstrap.bundle.min.js"></script>
+                    <script src="https://unpkg.com/cropperjs@1.6.2/dist/cropper.js"></script>
                     <script>
-                        // Your JavaScript code (same as earlier)
+                        const fileInput = document.getElementById('files');
+                        const fileList = document.getElementById('file-list');
+                        const cropModal = $('#cropModal');
+                        const image = document.getElementById('image');
+                        let cropper;
+
+                        fileInput.addEventListener('change', () => displayFiles(fileInput.files));
+
+                        function displayFiles(files) {
+                            fileList.innerHTML = '';
+                            Array.from(files).forEach((file, index) => {
+                                const row = document.createElement('div');
+                                row.className = 'd-flex justify-content-between align-items-center mb-2';
+                                row.innerHTML = \`
+                                    <span>\${file.name}</span>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="openCropModal(\${index})">Crop</button>
+                                \`;
+                                fileList.appendChild(row);
+                            });
+                        }
+
+                        window.openCropModal = function (fileIndex) {
+                            const file = fileInput.files[fileIndex];
+                            if (!file) return;
+
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                image.src = reader.result;
+
+                                if (cropper) cropper.destroy();
+
+                                cropper = new Cropper(image, {
+                                    autoCropArea: 0.5,
+                                    viewMode: 2,
+                                });
+
+                                cropModal.modal('show');
+                            };
+                            reader.readAsDataURL(file);
+                        };
+
+                        document.getElementById('save-crop').addEventListener('click', () => {
+                            const canvas = cropper.getCroppedCanvas();
+                            canvas.toBlob((blob) => {
+                                console.log('Cropped image ready for upload:', blob);
+                                cropModal.modal('hide');
+                                cropper.destroy();
+                            });
+                        });
                     </script>
                 </body>
                 </html>
