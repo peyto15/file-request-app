@@ -145,6 +145,7 @@ app.post('/process-order', async (req, res) => {
 });
 
 // `/upload-form/:id` Endpoint
+// `/upload-form/:id` Endpoint
 app.get('/upload-form/:id', async (req, res) => {
     const { id } = req.params;
 
@@ -162,7 +163,6 @@ app.get('/upload-form/:id', async (req, res) => {
 
         // Check the request status
         if (row.status === 'Completed') {
-            // Completed status
             res.send(`
                 <!DOCTYPE html>
                 <html lang="en">
@@ -170,19 +170,21 @@ app.get('/upload-form/:id', async (req, res) => {
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <title>Upload Already Completed</title>
+                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
                 </head>
-                <body>
-                    <h1>Upload Already Completed</h1>
-                    <p>Your upload has been successfully completed.</p>
-                    <form action="/request-restart" method="POST">
-                        <input type="hidden" name="id" value="${id}">
-                        <button type="submit">Request Restart</button>
-                    </form>
+                <body class="text-center">
+                    <div class="container mt-5">
+                        <h1>Upload Already Completed</h1>
+                        <p>Your upload has been successfully completed.</p>
+                        <form action="/request-restart" method="POST">
+                            <input type="hidden" name="id" value="${id}">
+                            <button class="btn btn-warning" type="submit">Request Restart</button>
+                        </form>
+                    </div>
                 </body>
                 </html>
             `);
         } else if (row.status === 'Completed-Reset-Requested') {
-            // Completed-Reset-Requested status
             res.send(`
                 <!DOCTYPE html>
                 <html lang="en">
@@ -190,126 +192,135 @@ app.get('/upload-form/:id', async (req, res) => {
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <title>Reset Request Under Review</title>
+                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
                 </head>
-                <body>
-                    <h1>Reset Request Under Review</h1>
-                    <p>Your reset request has been sent and is under review by the seller.</p>
-                    <p>If you have further questions, please contact the seller at <a href="mailto:${process.env.PERSONAL_EMAIL}">${process.env.PERSONAL_EMAIL}</a>.</p>
+                <body class="text-center">
+                    <div class="container mt-5">
+                        <h1>Reset Request Under Review</h1>
+                        <p>Your reset request has been sent and is under review by the seller.</p>
+                        <p>If you have further questions, please contact the seller at <a href="mailto:${process.env.PERSONAL_EMAIL}">${process.env.PERSONAL_EMAIL}</a>.</p>
+                    </div>
                 </body>
                 </html>
             `);
         } else {
-            // Pending or other statuses
+            // Render file upload interface for Pending or other statuses
             res.send(`
                 <!DOCTYPE html>
                 <html lang="en">
                 <head>
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Upload and Edit Your Files</title>
+                    <title>Upload Your Files</title>
+                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
                     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.3/cropper.min.css" />
-                    <style>
-                        #preview-container {
-                            margin-top: 20px;
-                        }
-                        #preview-image {
-                            max-width: 100%;
-                            height: auto;
-                        }
-                        #crop-buttons {
-                            margin-top: 10px;
-                        }
-                    </style>
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.3/cropper.min.js"></script>
+                </head>
+                <body>
+                    <div class="container mt-5">
+                        <h1 class="text-center">Upload Your Files</h1>
+                        <form id="uploadForm" action="/upload" method="POST" enctype="multipart/form-data">
+                            <input type="hidden" name="id" value="${id}">
+                            <div class="mb-3">
+                                <label for="files" class="form-label">Select or Drag Files:</label>
+                                <div id="drop-zone" class="border border-primary p-3 text-center" style="cursor: pointer;">
+                                    Drag and drop files here or click to select files
+                                </div>
+                                <input type="file" name="files" id="files" class="form-control d-none" multiple required>
+                            </div>
+                            <div id="file-list"></div>
+                            <button type="submit" class="btn btn-primary mt-3">Upload</button>
+                        </form>
+                    </div>
+
+                    <!-- Modal for cropping -->
+                    <div class="modal fade" id="cropModal" tabindex="-1" aria-labelledby="cropModalLabel" aria-hidden="true">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="cropModalLabel">Crop Your Image</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div id="crop-container">
+                                        <img id="crop-image" src="#" alt="Crop Preview" style="max-width: 100%;">
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="button" id="save-crop" class="btn btn-success">Save Crop</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <script>
+                        const dropZone = document.getElementById('drop-zone');
+                        const fileInput = document.getElementById('files');
+                        const fileList = document.getElementById('file-list');
                         const allowedFileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
                         const maxFileSize = 10 * 1024 * 1024; // 10MB
+                        const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
+                        const cropImage = document.getElementById('crop-image');
+                        let cropper;
 
-                        function validateFiles(event) {
-                            const files = document.getElementById('files').files;
+                        dropZone.addEventListener('click', () => fileInput.click());
+                        dropZone.addEventListener('dragover', (event) => {
+                            event.preventDefault();
+                            dropZone.classList.add('bg-light');
+                        });
+                        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('bg-light'));
+                        dropZone.addEventListener('drop', (event) => {
+                            event.preventDefault();
+                            dropZone.classList.remove('bg-light');
+                            fileInput.files = event.dataTransfer.files;
+                            displayFiles(fileInput.files);
+                        });
 
-                            // Check file count
-                            if (files.length > 9) {
-                                alert('You can only upload up to 9 files at a time.');
-                                event.preventDefault();
-                                return;
-                            }
+                        fileInput.addEventListener('change', () => displayFiles(fileInput.files));
 
-                            for (let file of files) {
+                        function displayFiles(files) {
+                            fileList.innerHTML = '';
+                            Array.from(files).forEach((file, index) => {
                                 if (!allowedFileTypes.includes(file.type)) {
-                                    alert(\`Invalid file type: \${file.name}. Only JPEG, PNG, and PDF files are allowed.\`);
-                                    event.preventDefault();
+                                    alert(\`Invalid file type: \${file.name}\`);
                                     return;
                                 }
                                 if (file.size > maxFileSize) {
-                                    alert(\`File too large: \${file.name}. Maximum size is 10MB.\`);
-                                    event.preventDefault();
+                                    alert(\`File too large: \${file.name}\`);
                                     return;
                                 }
-                            }
+                                const row = document.createElement('div');
+                                row.className = 'mb-2';
+                                row.innerHTML = \`
+                                    <span>\${file.name}</span>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="openCropModal(\${index})">Preview/Edit</button>
+                                \`;
+                                fileList.appendChild(row);
+                            });
                         }
-                    </script>
-                </head>
-                <body>
-                    <h1>Upload and Edit Your Files</h1>
-                    <form id="upload-form" action="/upload" method="POST" enctype="multipart/form-data" onsubmit="validateFiles(event)">
-                        <input type="hidden" name="id" value="${id}">
-                        <label for="files">Select Files:</label>
-                        <input type="file" id="files" name="files" accept="image/*" multiple required><br><br>
-                        <button type="button" id="preview-btn">Preview</button>
-                        <div id="preview-container">
-                            <img id="preview-image" style="display:none;">
-                            <div id="crop-buttons" style="display:none;">
-                                <button type="button" id="crop-btn">Crop</button>
-                                <button type="button" id="reset-btn">Reset</button>
-                            </div>
-                        </div>
-                        <br>
-                        <button type="submit">Upload</button>
-                    </form>
-                    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/2.0.0-alpha.3/cropper.min.js"></script>
-                    <script>
-                        const previewBtn = document.getElementById('preview-btn');
-                        const filesInput = document.getElementById('files');
-                        const previewImage = document.getElementById('preview-image');
-                        const cropButtons = document.getElementById('crop-buttons');
-                        let cropper;
 
-                        previewBtn.addEventListener('click', () => {
-                            const file = filesInput.files[0];
-                            if (!file) {
-                                alert('Please select an image file to preview.');
-                                return;
-                            }
-
+                        function openCropModal(fileIndex) {
+                            const file = fileInput.files[fileIndex];
                             const reader = new FileReader();
                             reader.onload = () => {
-                                previewImage.src = reader.result;
-                                previewImage.style.display = 'block';
-
-                                if (cropper) cropper.destroy(); // Destroy previous cropper instance
-                                cropper = new Cropper(previewImage, {
+                                cropImage.src = reader.result;
+                                cropper = new Cropper(cropImage, {
                                     aspectRatio: 1,
                                     viewMode: 2,
                                 });
-                                cropButtons.style.display = 'block';
+                                cropModal.show();
                             };
                             reader.readAsDataURL(file);
-                        });
+                        }
 
-                        document.getElementById('crop-btn').addEventListener('click', () => {
-                            if (!cropper) return;
+                        document.getElementById('save-crop').addEventListener('click', () => {
                             const croppedCanvas = cropper.getCroppedCanvas();
                             croppedCanvas.toBlob((blob) => {
-                                const newFile = new File([blob], 'cropped-image.jpg', { type: 'image/jpeg' });
-                                const dataTransfer = new DataTransfer();
-                                dataTransfer.items.add(newFile);
-                                filesInput.files = dataTransfer.files;
-                                alert('Image cropped and ready for upload!');
+                                console.log('Cropped image ready for upload.');
+                                cropModal.hide();
+                                cropper.destroy();
                             });
-                        });
-
-                        document.getElementById('reset-btn').addEventListener('click', () => {
-                            if (cropper) cropper.reset();
                         });
                     </script>
                 </body>
