@@ -338,7 +338,7 @@ app.get('/upload-form/:id', async (req, res) => {
                                 });
 
                                 if (!response.ok) {
-                                    throw new Error(`HTTP error! Status: ${response.status}`);
+                                    throw new Error(HTTP error! Status: ${response.status});
                                 }
 
                                 const result = await response.json();
@@ -349,6 +349,7 @@ app.get('/upload-form/:id', async (req, res) => {
                                 alert('An error occurred while uploading files. Please try again.');
                             }
                         });
+
                     </script>
                 </body>
                 </html>
@@ -359,6 +360,7 @@ app.get('/upload-form/:id', async (req, res) => {
         res.status(500).send('An error occurred.');
     }
 });
+
 
 // `/request-restart` Endpoint
 app.post('/request-restart', async (req, res) => {
@@ -391,15 +393,22 @@ app.post('/request-restart', async (req, res) => {
 });
 
 // `/upload` Endpoint
-app.post('/upload', upload.array('files[]', 9), async (req, res) => {
+app.post('/upload', (req, res, next) => {
+    upload.array('files', 10)(req, res, (err) => {
+        if (err) {
+            if (err.code === 'LIMIT_FILE_COUNT') {
+                return res.status(400).send({ success: false, error: 'You can only upload up to 9 files.' });
+            }
+            if (err.message) {
+                return res.status(400).send({ success: false, error: err.message });
+            }
+            return res.status(500).send({ success: false, error: err.message });
+        }
+        next();
+    });
+}, async (req, res) => {
     try {
         const { id } = req.body;
-
-        if (!req.files || req.files.length === 0) {
-            return res.status(400).send({ success: false, error: 'No files were uploaded.' });
-        }
-
-        // Validate the ID
         const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
         if (!rows || rows.length === 0) {
             return res.status(404).send({ success: false, error: 'Invalid or expired link.' });
@@ -409,18 +418,15 @@ app.post('/upload', upload.array('files[]', 9), async (req, res) => {
         const folderName = `Order-${request.receiptid}-${request.name}`;
         const folderId = await createFolder(folderName);
 
-        // Share the folder with your personal email
         await shareFolder(folderId, process.env.PERSONAL_EMAIL);
 
-        // Upload the files to Google Drive
         const uploadedFiles = [];
         for (const file of req.files) {
             const fileId = await uploadFile(file.path, file.originalname, folderId);
             uploadedFiles.push({ fileName: file.originalname, fileId });
-            fs.unlinkSync(file.path); // Delete local file after upload
+            fs.unlinkSync(file.path);
         }
 
-        // Update the database status to 'Completed'
         const centralTimestamp = new Intl.DateTimeFormat('en-US', {
             timeZone: 'America/Chicago',
             year: 'numeric',
@@ -442,7 +448,7 @@ app.post('/upload', upload.array('files[]', 9), async (req, res) => {
             files: uploadedFiles,
         });
     } catch (error) {
-        console.error('Error processing upload:', error);
+        console.error(`Error processing upload: ${error.message}`);
         res.status(500).send({ success: false, error: error.message });
     }
 });
