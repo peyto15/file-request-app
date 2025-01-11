@@ -310,24 +310,44 @@ app.get('/upload-form/:id', async (req, res) => {
                         });
 
                         // Override the form submission to include cropped images
-                        document.getElementById('uploadForm').addEventListener('submit', (event) => {
-                            event.preventDefault();
-                            const formData = new FormData();
+                        document.getElementById('uploadForm').addEventListener('submit', async (event) => {
+                            event.preventDefault(); // Prevent default form submission behavior
 
-                            Object.values(croppedFiles).forEach((file, index) => {
-                                formData.append('files[]', file || fileInput.files[index]);
+                            const formData = new FormData();
+                            const id = document.querySelector('input[name="id"]').value;
+
+                            // Add the hidden id field to the form data
+                            formData.append('id', id);
+
+                            // Iterate through file inputs and add cropped or original files to the form data
+                            Array.from(fileInput.files).forEach((file, index) => {
+                                if (croppedFiles[index]) {
+                                    // Add the cropped file if it exists
+                                    formData.append('files[]', croppedFiles[index]);
+                                } else {
+                                    // Otherwise, add the original file
+                                    formData.append('files[]', file);
+                                }
                             });
 
-                            // Add the hidden id field
-                            formData.append('id', document.querySelector('input[name="id"]').value);
+                            // Submit the form data via Fetch API
+                            try {
+                                const response = await fetch('/upload', {
+                                    method: 'POST',
+                                    body: formData,
+                                });
 
-                            fetch('/upload', {
-                                method: 'POST',
-                                body: formData,
-                            })
-                                .then((response) => response.json())
-                                .then((data) => console.log('Upload response:', data))
-                                .catch((error) => console.error('Upload error:', error));
+                                if (!response.ok) {
+                                    throw new Error(`HTTP error! Status: ${response.status}`);
+                                }
+
+                                const result = await response.json();
+                                console.log('Upload successful:', result);
+                                alert('Files uploaded successfully!');
+                            } catch (error) {
+                                console.error('Upload error:', error);
+                                alert('An error occurred while uploading files. Please try again.');
+                            }
                         });
                     </script>
                 </body>
@@ -371,22 +391,15 @@ app.post('/request-restart', async (req, res) => {
 });
 
 // `/upload` Endpoint
-app.post('/upload', (req, res, next) => {
-    upload.array('files', 10)(req, res, (err) => {
-        if (err) {
-            if (err.code === 'LIMIT_FILE_COUNT') {
-                return res.status(400).send({ success: false, error: 'You can only upload up to 9 files.' });
-            }
-            if (err.message) {
-                return res.status(400).send({ success: false, error: err.message });
-            }
-            return res.status(500).send({ success: false, error: err.message });
-        }
-        next();
-    });
-}, async (req, res) => {
+app.post('/upload', upload.array('files[]', 9), async (req, res) => {
     try {
         const { id } = req.body;
+
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).send({ success: false, error: 'No files were uploaded.' });
+        }
+
+        // Validate the ID
         const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
         if (!rows || rows.length === 0) {
             return res.status(404).send({ success: false, error: 'Invalid or expired link.' });
@@ -396,15 +409,18 @@ app.post('/upload', (req, res, next) => {
         const folderName = `Order-${request.receiptid}-${request.name}`;
         const folderId = await createFolder(folderName);
 
+        // Share the folder with your personal email
         await shareFolder(folderId, process.env.PERSONAL_EMAIL);
 
+        // Upload the files to Google Drive
         const uploadedFiles = [];
         for (const file of req.files) {
             const fileId = await uploadFile(file.path, file.originalname, folderId);
             uploadedFiles.push({ fileName: file.originalname, fileId });
-            fs.unlinkSync(file.path);
+            fs.unlinkSync(file.path); // Delete local file after upload
         }
 
+        // Update the database status to 'Completed'
         const centralTimestamp = new Intl.DateTimeFormat('en-US', {
             timeZone: 'America/Chicago',
             year: 'numeric',
@@ -426,7 +442,7 @@ app.post('/upload', (req, res, next) => {
             files: uploadedFiles,
         });
     } catch (error) {
-        console.error(`Error processing upload: ${error.message}`);
+        console.error('Error processing upload:', error);
         res.status(500).send({ success: false, error: error.message });
     }
 });
