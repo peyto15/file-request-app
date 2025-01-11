@@ -145,221 +145,178 @@ app.post('/process-order', async (req, res) => {
 });
 
 
+// `/upload-form/:id` Endpoint
 app.get('/upload-form/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
-        // Query the database for the specific ID
         const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
 
         if (!rows || rows.length === 0) {
-            console.error('No matching ID found.');
-            return res.status(404).send('Invalid or expired link.');
+            return res.status(404).send('<h1>Invalid or expired link.</h1>');
         }
 
         const row = rows[0];
-        console.log(`Valid request found for ID ${id}:`, row);
 
-        // Check the request status
         if (row.status === 'Completed') {
             res.send(`
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Upload Already Completed</title>
-                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
-                </head>
-                <body class="text-center">
-                    <div class="container mt-5">
-                        <h1>Upload Already Completed</h1>
-                        <p>Your upload has been successfully completed.</p>
-                        <form action="/request-restart" method="POST">
-                            <input type="hidden" name="id" value="${id}">
-                            <button class="btn btn-warning" type="submit">Request Restart</button>
-                        </form>
-                    </div>
-                </body>
-                </html>
+                <h1>Upload Completed</h1>
+                <p>Your upload has been completed successfully.</p>
+                <form method="POST" action="/request-restart">
+                    <input type="hidden" name="id" value="${id}">
+                    <button type="submit">Request Restart</button>
+                </form>
             `);
-        } else {
-            res.send(`
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Upload Your Files</title>
-                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
-                    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css" />
-                </head>
-                <body>
-                    <div class="container mt-5">
-                        <h1 class="text-center">Upload Your Files</h1>
-                        <form id="uploadForm" action="/upload" method="POST" enctype="multipart/form-data">
-                            <input type="hidden" name="id" value="${id}">
-                            <div class="mb-3">
-                                <label for="files" class="form-label">Select or Drag Files:</label>
-                                <div id="drop-zone" class="border border-primary p-3 text-center" style="cursor: pointer;">
-                                    Drag and drop files here or click to select files
-                                </div>
-                                <input type="file" name="files" id="files" class="form-control d-none" multiple required>
-                            </div>
-                            <div id="file-list" class="mt-3"></div>
-                            <button type="submit" class="btn btn-primary mt-3">Upload</button>
-                        </form>
-                    </div>
+            return;
+        }
 
-                    <!-- Modal for cropping -->
-                    <div class="modal fade" id="cropModal" tabindex="-1" aria-labelledby="cropModalLabel" aria-hidden="true">
-                        <div class="modal-dialog modal-lg">
-                            <div class="modal-content">
-                                <div class="modal-header">
-                                    <h5 class="modal-title" id="cropModalLabel">Crop Your Image</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                </div>
-                                <div class="modal-body">
-                                    <div id="crop-container" class="d-flex justify-content-center">
-                                        <img id="crop-image" src="#" alt="Crop Preview" style="max-width: 100%; max-height: 70vh;">
-                                    </div>
-                                </div>
-                                <div class="modal-footer">
-                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                    <button type="button" id="save-crop" class="btn btn-success">Save Crop</button>
-                                </div>
+        res.send(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Upload Your Files</title>
+                <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+                <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.css" />
+            </head>
+            <body>
+                <div class="container mt-5">
+                    <h1>Upload Files</h1>
+                    <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
+                        <input type="hidden" name="id" value="${id}">
+                        <div class="mb-3">
+                            <label for="files" class="form-label">Select Files:</label>
+                            <input type="file" id="files" name="files" class="form-control" multiple required>
+                        </div>
+                        <div id="preview" class="mb-3"></div>
+                        <button type="submit" class="btn btn-primary">Upload</button>
+                    </form>
+                </div>
+
+                <div id="cropModal" class="modal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Crop Image</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div id="croppieContainer"></div>
+                            </div>
+                            <div class="modal-footer">
+                                <button id="saveCrop" class="btn btn-success">Save Crop</button>
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
-                    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
-                    <script>
-                        const dropZone = document.getElementById('drop-zone');
-                        const fileInput = document.getElementById('files');
-                        const fileList = document.getElementById('file-list');
-                        const cropModal = new bootstrap.Modal(document.getElementById('cropModal'));
-                        const cropImage = document.getElementById('crop-image');
-                        let cropper;
-                        const croppedFiles = {};
+                <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.js"></script>
+                <script>
+                    const fileInput = document.getElementById('files');
+                    const previewContainer = document.getElementById('preview');
+                    let croppieInstance;
+                    const croppedFiles = {};
+                    const croppieContainer = document.getElementById('croppieContainer');
+                    const modal = new bootstrap.Modal(document.getElementById('cropModal'));
 
-                        dropZone.addEventListener('click', () => fileInput.click());
-                        dropZone.addEventListener('dragover', (event) => {
-                            event.preventDefault();
-                            dropZone.classList.add('bg-light');
+                    fileInput.addEventListener('change', handleFileSelect);
+
+                    function handleFileSelect(event) {
+                        previewContainer.innerHTML = '';
+                        const files = event.target.files;
+                        Array.from(files).forEach((file, index) => {
+                            if (file.type.startsWith('image/')) {
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                    const image = document.createElement('img');
+                                    image.src = reader.result;
+                                    image.className = 'img-thumbnail';
+                                    image.style.width = '150px';
+                                    image.style.cursor = 'pointer';
+                                    image.dataset.index = index;
+                                    image.addEventListener('click', () => openCropModal(reader.result, index));
+                                    previewContainer.appendChild(image);
+                                };
+                                reader.readAsDataURL(file);
+                            } else {
+                                const div = document.createElement('div');
+                                div.textContent = file.name;
+                                previewContainer.appendChild(div);
+                            }
                         });
-                        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('bg-light'));
-                        dropZone.addEventListener('drop', (event) => {
-                            event.preventDefault();
-                            dropZone.classList.remove('bg-light');
-                            fileInput.files = event.dataTransfer.files;
-                            displayFiles(fileInput.files);
-                        });
+                    }
 
-                        fileInput.addEventListener('change', () => displayFiles(fileInput.files));
-
-                        function displayFiles(files) {
-                            fileList.innerHTML = '';
-                            Array.from(files).forEach((file, index) => {
-                                const row = document.createElement('div');
-                                row.className = 'd-flex justify-content-between align-items-center mb-2';
-                                row.innerHTML = \`
-                                    <span>
-                                        <img src="\${URL.createObjectURL(file)}" style="width: 50px; height: 50px; object-fit: cover;" alt="Thumbnail" class="me-2">
-                                        \${file.name}
-                                    </span>
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="openCropModal(\${index})">Crop</button>
-                                \`;
-                                fileList.appendChild(row);
-                            });
+                    function openCropModal(imageSrc, fileIndex) {
+                        if (croppieInstance) {
+                            croppieInstance.destroy(); // Destroy existing Croppie instance
                         }
 
-                        function openCropModal(fileIndex) {
-                            const file = fileInput.files[fileIndex];
-                            if (!file) return;
-
-                            const reader = new FileReader();
-                            reader.onload = () => {
-                                cropImage.src = reader.result;
-
-                                // Destroy existing cropper to avoid conflicts
-                                if (cropper) cropper.destroy();
-
-                                cropper = new Cropper(cropImage, {
-                                    aspectRatio: 1,
-                                    viewMode: 2,
-                                });
-                                cropModal.show();
-                            };
-                            reader.readAsDataURL(file);
-                        }
-
-                        document.getElementById('save-crop').addEventListener('click', () => {
-                            const croppedCanvas = cropper.getCroppedCanvas();
-                            croppedCanvas.toBlob((blob) => {
-                                const croppedFile = new File([blob], cropImage.alt, { type: 'image/png' });
-                                const fileIndex = Array.from(fileInput.files).findIndex(
-                                    (file) => file.name === cropImage.alt
-                                );
-
-                                croppedFiles[fileIndex] = croppedFile;
-                                cropModal.hide();
-                                cropper.destroy();
-                                console.log('Cropped file saved:', croppedFile);
-                            });
+                        croppieContainer.innerHTML = ''; // Clear the container
+                        croppieInstance = new Croppie(croppieContainer, {
+                            viewport: { width: 200, height: 200, type: 'square' },
+                            boundary: { width: 300, height: 300 },
                         });
 
-                        // Override the form submission to include cropped images
-                        document.getElementById('uploadForm').addEventListener('submit', async (event) => {
-                            event.preventDefault(); // Prevent default form submission behavior
+                        croppieInstance.bind({ url: imageSrc });
+                        modal.show();
 
-                            const formData = new FormData();
-                            const id = document.querySelector('input[name="id"]').value;
+                        document.getElementById('saveCrop').onclick = () => {
+                            croppieInstance.result({ type: 'blob' }).then((croppedBlob) => {
+                                croppedFiles[fileIndex] = croppedBlob;
 
-                            // Add the hidden id field to the form data
-                            formData.append('id', id);
+                                // Update the thumbnail with the cropped version
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                    const thumbnails = previewContainer.querySelectorAll('img');
+                                    thumbnails[fileIndex].src = reader.result;
+                                };
+                                reader.readAsDataURL(croppedBlob);
 
-                            // Iterate through file inputs and add cropped or original files to the form data
-                            Array.from(fileInput.files).forEach((file, index) => {
-                                if (croppedFiles[index]) {
-                                    // Add the cropped file if it exists
-                                    formData.append('files[]', croppedFiles[index]);
-                                } else {
-                                    // Otherwise, add the original file
-                                    formData.append('files[]', file);
-                                }
+                                modal.hide();
                             });
+                        };
+                    }
 
-                            // Submit the form data via Fetch API
-                            try {
-                                const response = await fetch('/upload', {
-                                    method: 'POST',
-                                    body: formData,
-                                });
+                    document.getElementById('uploadForm').addEventListener('submit', async (event) => {
+                        event.preventDefault();
+                        const formData = new FormData();
+                        const id = document.querySelector('input[name="id"]').value;
 
-                                if (!response.ok) {
-                                    throw new Error(HTTP error! Status: ${response.status});
-                                }
-
-                                const result = await response.json();
-                                console.log('Upload successful:', result);
-                                alert('Files uploaded successfully!');
-                            } catch (error) {
-                                console.error('Upload error:', error);
-                                alert('An error occurred while uploading files. Please try again.');
+                        formData.append('id', id);
+                        const files = fileInput.files;
+                        Array.from(files).forEach((file, index) => {
+                            if (croppedFiles[index]) {
+                                formData.append('files', croppedFiles[index], file.name);
+                            } else {
+                                formData.append('files', file);
                             }
                         });
 
-                    </script>
-                </body>
-                </html>
-            `);
-        }
+                        try {
+                            const response = await fetch('/upload', { method: 'POST', body: formData });
+                            const result = await response.json();
+                            if (result.success) {
+                                alert('Files uploaded successfully.');
+                            } else {
+                                alert('Failed to upload files.');
+                            }
+                        } catch (error) {
+                            console.error('Upload error:', error);
+                            alert('An error occurred while uploading.');
+                        }
+                    });
+                </script>
+            </body>
+            </html>
+        `);
     } catch (err) {
-        console.error('Database Error:', err.stack);
-        res.status(500).send('An error occurred.');
+        console.error('Error:', err.message);
+        res.status(500).send('<h1>An error occurred</h1>');
     }
 });
+
 
 
 // `/request-restart` Endpoint
