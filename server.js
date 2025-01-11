@@ -204,7 +204,6 @@ app.get('/upload-form/:id', async (req, res) => {
                 </html>
             `);
         } else {
-            // Render file upload interface for Pending or other statuses
             res.send(`
                 <!DOCTYPE html>
                 <html lang="en">
@@ -273,13 +272,12 @@ app.get('/upload-form/:id', async (req, res) => {
                         dropZone.addEventListener('drop', (event) => {
                             event.preventDefault();
                             dropZone.classList.remove('bg-light');
-                            fileInput.files = event.dataTransfer.files;
-                            displayFiles(fileInput.files);
+                            handleFiles(event.dataTransfer.files);
                         });
 
-                        fileInput.addEventListener('change', () => displayFiles(fileInput.files));
+                        fileInput.addEventListener('change', () => handleFiles(fileInput.files));
 
-                        function displayFiles(files) {
+                        function handleFiles(files) {
                             fileList.innerHTML = '';
                             Array.from(files).forEach((file, index) => {
                                 if (!allowedFileTypes.includes(file.type)) {
@@ -321,7 +319,9 @@ app.get('/upload-form/:id', async (req, res) => {
                             const file = fileInput.files[fileIndex];
                             const reader = new FileReader();
                             reader.onload = () => {
-                                window.open(reader.result, '_blank');
+                                const previewWindow = window.open();
+                                previewWindow.document.write(\`<img src="\${reader.result}" style="max-width:100%">\`);
+                                previewWindow.document.close();
                             };
                             reader.readAsDataURL(file);
                         }
