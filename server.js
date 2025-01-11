@@ -144,7 +144,7 @@ app.post('/process-order', async (req, res) => {
     }
 });
 
-// `/upload-form/:id` Endpoint
+
 // `/upload-form/:id` Endpoint
 app.get('/upload-form/:id', async (req, res) => {
     const { id } = req.params;
@@ -228,7 +228,7 @@ app.get('/upload-form/:id', async (req, res) => {
                                 </div>
                                 <input type="file" name="files" id="files" class="form-control d-none" multiple required>
                             </div>
-                            <div id="file-list"></div>
+                            <div id="file-list" class="mt-3"></div>
                             <button type="submit" class="btn btn-primary mt-3">Upload</button>
                         </form>
                     </div>
@@ -291,10 +291,13 @@ app.get('/upload-form/:id', async (req, res) => {
                                     return;
                                 }
                                 const row = document.createElement('div');
-                                row.className = 'mb-2';
+                                row.className = 'd-flex justify-content-between align-items-center mb-2';
                                 row.innerHTML = \`
                                     <span>\${file.name}</span>
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="openCropModal(\${index})">Preview/Edit</button>
+                                    <div>
+                                        <button type="button" class="btn btn-secondary btn-sm me-2" onclick="openPreviewModal(\${index})">Preview</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="openCropModal(\${index})">Crop</button>
+                                    </div>
                                 \`;
                                 fileList.appendChild(row);
                             });
@@ -310,6 +313,15 @@ app.get('/upload-form/:id', async (req, res) => {
                                     viewMode: 2,
                                 });
                                 cropModal.show();
+                            };
+                            reader.readAsDataURL(file);
+                        }
+
+                        function openPreviewModal(fileIndex) {
+                            const file = fileInput.files[fileIndex];
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                window.open(reader.result, '_blank');
                             };
                             reader.readAsDataURL(file);
                         }
