@@ -303,17 +303,29 @@ app.get('/upload-form/:id', async (req, res) => {
 
                         function openCropModal(fileIndex) {
                             const file = fileInput.files[fileIndex];
+                            if (!file) return; // Ensure the file exists
+
                             const reader = new FileReader();
                             reader.onload = () => {
                                 cropImage.src = reader.result;
-                                cropper = new Cropper(cropImage, {
-                                    aspectRatio: 1,
-                                    viewMode: 2,
-                                });
-                                cropModal.show();
+
+                                // Destroy any existing cropper instance to avoid conflicts
+                                if (cropper) cropper.destroy();
+
+                                // Ensure Cropper is loaded
+                                if (typeof Cropper !== "undefined") {
+                                    cropper = new Cropper(cropImage, {
+                                        aspectRatio: 1,
+                                        viewMode: 2,
+                                    });
+                                    cropModal.show();
+                                } else {
+                                    console.error("Cropper.js is not defined.");
+                                }
                             };
                             reader.readAsDataURL(file);
                         }
+
 
                         document.getElementById('save-crop').addEventListener('click', () => {
                             const croppedCanvas = cropper.getCroppedCanvas();
