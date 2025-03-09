@@ -189,11 +189,12 @@ app.get('/upload-form/:id', async (req, res) => {
                             <label for="files" class="form-label">Select Files:</label>
                             <input type="file" id="files" name="files" class="form-control" multiple required>
                         </div>
-                        <div id="preview" class="mb-3"></div>
+                        <div id="preview" class="mb-3 d-flex flex-wrap gap-2"></div>
                         <button type="submit" class="btn btn-primary">Upload</button>
                     </form>
                 </div>
 
+                <!-- Cropping Modal -->
                 <div id="cropModal" class="modal" tabindex="-1">
                     <div class="modal-dialog">
                         <div class="modal-content">
@@ -214,97 +215,153 @@ app.get('/upload-form/:id', async (req, res) => {
                 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.js"></script>
                 <script>
-                    const fileInput = document.getElementById('files');
-                    const previewContainer = document.getElementById('preview');
-                    let croppieInstance;
-                    const croppedFiles = {};
-                    const croppieContainer = document.getElementById('croppieContainer');
-                    const modal = new bootstrap.Modal(document.getElementById('cropModal'));
+                    console.log("✅ Script loaded and running!");
 
-                    fileInput.addEventListener('change', handleFileSelect);
+                    const fileInput = document.getElementById("files");
+                    const previewContainer = document.getElementById("preview");
+                    const croppieContainer = document.getElementById("croppieContainer");
+                    const modal = new bootstrap.Modal(document.getElementById("cropModal"));
+
+                    let croppieInstance = null;
+                    let filesMap = new Map(); // Store original files with a unique ID
+                    let croppedFiles = new Map(); // Store cropped images with matching IDs
+
+                    if (fileInput) {
+                        fileInput.addEventListener("change", (event) => handleFileSelect(event));
+                        console.log("📂 File input change listener added.");
+                    } else {
+                        console.error("❌ File input element NOT found!");
+                    }
+
+                    function generateFileId(file) {
+                        return file.name + "-" + file.size + "-" + file.lastModified;
+                    }
 
                     function handleFileSelect(event) {
-                        previewContainer.innerHTML = '';
-                        const files = event.target.files;
-                        Array.from(files).forEach((file, index) => {
-                            if (file.type.startsWith('image/')) {
-                                const reader = new FileReader();
-                                reader.onload = () => {
-                                    const image = document.createElement('img');
-                                    image.src = reader.result;
-                                    image.className = 'img-thumbnail';
-                                    image.style.width = '150px';
-                                    image.style.cursor = 'pointer';
-                                    image.dataset.index = index;
-                                    image.addEventListener('click', () => openCropModal(reader.result, index));
-                                    previewContainer.appendChild(image);
-                                };
-                                reader.readAsDataURL(file);
-                            } else {
-                                const div = document.createElement('div');
-                                div.textContent = file.name;
-                                previewContainer.appendChild(div);
-                            }
+                        previewContainer.innerHTML = ""; // Clear previous previews
+                        filesMap.clear(); // Reset map to avoid old files mixing
+                        croppedFiles.clear(); // Clear old cropped versions
+
+                        console.clear();
+                        console.log("📂 File selection event triggered.");
+
+                        const filesArray = Array.from(event.target.files);
+                        filesArray.forEach((file) => {
+                            const fileId = generateFileId(file); // Unique ID per file
+                            filesMap.set(fileId, file);
+                            displayFilePreview(file, fileId);
                         });
                     }
 
-                    function openCropModal(imageSrc, fileIndex) {
+                    function displayFilePreview(file, fileId) {
+                        if (file.type.startsWith("image/")) {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                console.log("🖼️ Image loaded for preview: " + file.name + " (ID: " + fileId + ")");
+
+                                const imageWrapper = document.createElement("div");
+                                imageWrapper.className = "image-wrapper";
+                                imageWrapper.dataset.fileId = fileId;
+
+                                const image = document.createElement("img");
+                                image.src = reader.result;
+                                image.className = "img-thumbnail";
+                                image.style.width = "150px";
+                                image.style.cursor = "pointer";
+                                image.addEventListener("click", () => openCropModal(reader.result, fileId));
+
+                                const debugLabel = document.createElement("div");
+                                debugLabel.textContent = "ID: " + fileId;
+                                debugLabel.style.fontSize = "12px";
+                                debugLabel.style.color = "red";
+
+                                imageWrapper.appendChild(image);
+                                imageWrapper.appendChild(debugLabel);
+                                previewContainer.appendChild(imageWrapper);
+                            };
+                            reader.readAsDataURL(file);
+                        } else {
+                            console.log("📄 Non-image file detected: " + file.name);
+                            const div = document.createElement("div");
+                            div.textContent = file.name;
+                            previewContainer.appendChild(div);
+                        }
+                    }
+
+                    function openCropModal(imageSrc, fileId) {
+                        console.log("✂️ Cropping started for file ID: " + fileId);
+
                         if (croppieInstance) {
                             croppieInstance.destroy(); // Destroy existing Croppie instance
                         }
 
-                        croppieContainer.innerHTML = ''; // Clear the container
+                        croppieContainer.innerHTML = ""; // Clear container before reinitializing
                         croppieInstance = new Croppie(croppieContainer, {
-                            viewport: { width: 200, height: 200, type: 'square' },
+                            viewport: { width: 200, height: 200, type: "square" },
                             boundary: { width: 300, height: 300 },
                         });
 
                         croppieInstance.bind({ url: imageSrc });
                         modal.show();
 
-                        document.getElementById('saveCrop').onclick = () => {
-                            croppieInstance.result({ type: 'blob' }).then((croppedBlob) => {
-                                croppedFiles[fileIndex] = croppedBlob;
+                        document.getElementById("saveCrop").onclick = () => {
+                            croppieInstance.result({ type: "blob" }).then((croppedBlob) => {
+                                croppedFiles.set(fileId, croppedBlob);
+                                console.log("✅ Cropped image saved for ID: " + fileId);
 
-                                // Update the thumbnail with the cropped version
-                                const reader = new FileReader();
-                                reader.onload = () => {
-                                    const thumbnails = previewContainer.querySelectorAll('img');
-                                    thumbnails[fileIndex].src = reader.result;
-                                };
-                                reader.readAsDataURL(croppedBlob);
-
+                                updateThumbnail(fileId, croppedBlob);
                                 modal.hide();
                             });
                         };
                     }
 
-                    document.getElementById('uploadForm').addEventListener('submit', async (event) => {
-                        event.preventDefault();
-                        const formData = new FormData();
-                        const id = document.querySelector('input[name="id"]').value;
+                    function updateThumbnail(fileId, croppedBlob) {
+                        console.log("🔄 Updating thumbnail for file ID: " + fileId);
 
-                        formData.append('id', id);
-                        const files = fileInput.files;
-                        Array.from(files).forEach((file, index) => {
-                            if (croppedFiles[index]) {
-                                formData.append('files', croppedFiles[index], file.name);
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            const imageWrappers = previewContainer.querySelectorAll(".image-wrapper");
+                            imageWrappers.forEach((wrapper) => {
+                                if (wrapper.dataset.fileId === fileId) {
+                                    wrapper.querySelector("img").src = reader.result;
+                                    console.log("✅ Thumbnail updated for file ID: " + fileId);
+                                }
+                            });
+                        };
+                        reader.readAsDataURL(croppedBlob);
+                    }
+
+                    document.getElementById("uploadForm").addEventListener("submit", async (event) => {
+                        event.preventDefault();
+                        console.log("🚀 Uploading files...");
+
+                        const formData = new FormData();
+                        const id = document.querySelector("input[name='id']").value;
+                        formData.append("id", id);
+
+                        filesMap.forEach((file, fileId) => {
+                            if (croppedFiles.has(fileId)) {
+                                console.log("⬆️ Uploading Cropped Image: " + file.name + " (ID: " + fileId + ")");
+                                formData.append("files", croppedFiles.get(fileId), file.name);
                             } else {
-                                formData.append('files', file);
+                                console.log("⬆️ Uploading Original Image: " + file.name + " (ID: " + fileId + ")");
+                                formData.append("files", file);
                             }
                         });
 
                         try {
-                            const response = await fetch('/upload', { method: 'POST', body: formData });
+                            const response = await fetch("/upload", { method: "POST", body: formData });
                             const result = await response.json();
                             if (result.success) {
-                                alert('Files uploaded successfully.');
+                                alert("Files uploaded successfully.");
+                                console.log("🎉 Upload successful!");
                             } else {
-                                alert('Failed to upload files.');
+                                console.error("❌ Upload failed:", result.error);
+                                alert("Failed to upload files.");
                             }
                         } catch (error) {
-                            console.error('Upload error:', error);
-                            alert('An error occurred while uploading.');
+                            console.error("❌ Upload error:", error);
+                            alert("An error occurred while uploading.");
                         }
                     });
                 </script>
