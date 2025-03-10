@@ -5,11 +5,86 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const db = require('./database');
+const bodyParser = require("body-parser");
 const cron = require('node-cron');
 require('dotenv').config();
 const path = require('path');
-
 const app = express();
+const port = process.env.PORT || 3000;
+const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET;
+
+
+// ✅ 1️⃣ Shopify Webhook (Use `express.raw()` to capture raw body)
+app.post("/shopify-webhook", express.raw({ type: "application/json" }), async (req, res) => {
+    console.log("\n🛒 Shopify Webhook Received!");
+    const hmac = req.get("X-Shopify-Hmac-Sha256");
+
+    if (!hmac || !req.body || req.body.length === 0) {
+        console.log("❌ Missing HMAC or rawBody");
+        return res.status(400).send("Invalid request");
+    }
+
+    // Validate Signature
+    const hash = crypto.createHmac("sha256", process.env.SHOPIFY_WEBHOOK_SECRET)
+                       .update(req.body)
+                       .digest("base64");
+
+    if (hmac !== hash) {
+        console.log("❌ Unauthorized - Invalid HMAC");
+        return res.status(401).send("Unauthorized");
+    }
+
+    // ✅ Parse JSON Body
+    const order = JSON.parse(req.body.toString());
+    console.log("📦 Order Data:", order);
+
+    // Extract Data
+    const orderData = {
+        id: crypto.randomUUID(), // Generate unique request ID
+        name: `${order.customer?.first_name || "Unknown"} ${order.customer?.last_name || ""}`.trim(),
+        email: order.contact_email || order.customer?.email || "No Email",
+        receiptId: order.id,
+        timestamp: order.created_at,
+        status: "Pending",
+    };
+
+    // 🔍 Check for Duplicate Orders
+    const existing = await db.query("SELECT * FROM requests WHERE receiptId = $1", [orderData.receiptId]);
+
+    if (existing.rowCount > 0) {
+        console.log("⚠️ Order already exists. Skipping duplicate entry.");
+        return res.status(200).send("Order already processed.");
+    }
+
+    // 🚫 Ensure Email Exists
+    if (!orderData.email || orderData.email === "No Email") {
+        console.log("⚠️ No customer email found. Skipping order.");
+        return res.status(400).send("Missing customer email.");
+    }
+
+    // 🔹 Save to Database
+    try {
+        await db.query(
+            `INSERT INTO requests (id, name, email, receiptId, timestamp, status)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [orderData.id, orderData.name, orderData.email, orderData.receiptId, orderData.timestamp, orderData.status]
+        );
+        console.log("✅ Order Saved to Database:", orderData);
+    } catch (error) {
+        console.error("❌ Error saving order:", error);
+        return res.status(500).send("Database Error");
+    }
+
+    // 🎯 **TRIGGER EMAIL AFTER SAVING ORDER**
+    const uploadLink = `https://file-request-app.onrender.com/upload-form/${orderData.id}`;
+    await sendUploadEmail(orderData.email, uploadLink);
+
+    res.status(200).send("Order Processed Successfully.");
+});
+
+// ✅ 2️⃣ NOW Enable `express.json()` for ALL Other Routes
+app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Landing page bc why not
 app.get('/', (req, res) => {
@@ -35,7 +110,7 @@ const upload = multer({
 });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-const port = process.env.PORT || 3000;
+
 
 // Google Drive Authentication
 const auth = new google.auth.GoogleAuth({
@@ -56,6 +131,7 @@ const transporter = nodemailer.createTransport({
         pass: process.env.EMAIL_PASSWORD,
     },
 });
+
 
 // Helper: Find existing folder in Google Drive
 async function findFolder(folderName) {
@@ -547,6 +623,26 @@ app.get('/reset-upload/:id', async (req, res) => {
         res.status(500).send('An error occurred while resetting the upload process.');
     }
 });
+
+async function sendUploadEmail(recipientEmail, uploadLink) {
+    const mailOptions = {
+        from: `"File Upload Service" <${process.env.PERSONAL_EMAIL}>`,
+        to: recipientEmail,
+        subject: "Upload Your Files for Order",
+        html: `
+            <h1>File Upload Required</h1>
+            <p>Please upload your files for order processing.</p>
+            <a href="${uploadLink}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Upload Files</a>
+        `,
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log("📧 Email sent to:", recipientEmail);
+    } catch (error) {
+        console.error("❌ Email Error:", error);
+    }
+};
 
 // Schedule task to revert statuses every day at midnight
 cron.schedule('0 0 * * *', async () => {
