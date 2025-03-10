@@ -83,8 +83,8 @@ app.post("/shopify-webhook", express.raw({ type: "application/json" }), async (r
 });
 
 // ✅ 2️⃣ NOW Enable `express.json()` for ALL Other Routes
-app.use(bodyParser.json());
-app.use(express.urlencoded({ extended: true }));
+// app.use(bodyParser.json());
+// app.use(express.urlencoded({ extended: true }));
 
 // Landing page bc why not
 app.get('/', (req, res) => {
@@ -97,8 +97,8 @@ const allowedFileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
 const upload = multer({
     dest: 'uploads/',
     limits: {
-        fileSize: 10 * 1024 * 1024,
-        files: 9,
+        fileSize: 25 * 1024 * 1024,
+        files: 18,
     }, // 10MB + 9 files
     fileFilter: (req, file, cb) => {
         if (allowedFileTypes.includes(file.mimetype)) {
@@ -467,35 +467,78 @@ app.get('/upload-form/:id', async (req, res) => {
                     }
 
                     document.getElementById("uploadForm").addEventListener("submit", async (event) => {
-                        event.preventDefault();
-                        uploadBtn.disabled = true;
-                        loadingSpinner.style.display = "block";
+                    event.preventDefault();
 
-                        const formData = new FormData();
-                        const id = document.querySelector('input[name="id"]').value;
-                        formData.append("id", id);
+                    const uploadBtn = document.getElementById("uploadBtn");
+                    const loadingSpinner = document.getElementById("loadingSpinner");
+                    const fileInput = document.getElementById("files");
+                    const formData = new FormData();
 
-                        filesMap.forEach((file, fileId) => {
-                            if (croppedFiles.has(fileId)) {
-                                formData.append("files", croppedFiles.get(fileId), file.name);
-                            } else {
-                                formData.append("files", file);
-                            }
+                    uploadBtn.disabled = true;
+                    loadingSpinner.style.display = "block";
+
+                    const id = document.querySelector('input[name="id"]').value;
+
+                    if (!id) {
+                        console.error("❌ Missing ID in form submission!");
+                        alert("Error: Missing Order ID. Try refreshing the page.");
+                        uploadBtn.disabled = false;
+                        loadingSpinner.style.display = "none";
+                        return;
+                    }
+
+                    formData.append("id", id);
+
+                    // Check if files exist before sending
+                    if (fileInput.files.length === 0) {
+                        console.error("❌ No files selected for upload!");
+                        alert("Please select at least one file.");
+                        uploadBtn.disabled = false;
+                        loadingSpinner.style.display = "none";
+                        return;
+                    }
+
+                    for (let i = 0; i < fileInput.files.length; i++) {
+                        formData.append("files", fileInput.files[i]);
+                    }
+
+                    console.log("📂 Sending FormData:");
+                    for (let pair of formData.entries()) {
+                        console.log(pair[0] + " , " + pair[1]); // Debugging FormData contents
+                    }
+
+                    try {
+                        const response = await fetch("/upload", {
+                            method: "POST",
+                            body: formData,
                         });
 
-                        try {
-                            const response = await fetch("/upload", { method: "POST", body: formData });
-                            const result = await response.json();
-                            if (result.success) {
-                                const successModal = new bootstrap.Modal(document.getElementById("successModal"));
-                                successModal.show();
-                                setTimeout(() => { window.location.reload(); }, 3000);
-                            }
-                        } finally {
-                            loadingSpinner.style.display = "none";
-                            uploadBtn.disabled = false;
+                        console.log("📥 Server Response Status:", response.status);
+
+                        if (!response.ok) {
+                            throw new Error("Server responded with status: " + response.status);
                         }
-                    });
+
+                        const result = await response.json();
+                        console.log("✅ Server Response Data:", result);
+
+                        if (result.success) {
+                            const successModal = new bootstrap.Modal(document.getElementById("successModal"));
+                            successModal.show();
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 3000);
+                        } else {
+                            alert("Upload failed: " + result.error);
+                        }
+                    } catch (error) {
+                        console.error("🚨 Upload error:", error);
+                        alert("Upload failed. " + error.message);
+                    } finally {
+                        loadingSpinner.style.display = "none";
+                        uploadBtn.disabled = false;
+                    }
+                });
                 </script>
             </body>
             </html>
@@ -537,40 +580,64 @@ app.post('/request-restart', async (req, res) => {
     }
 });
 
-// `/upload` Endpoint
-app.post('/upload', (req, res, next) => {
-    upload.array('files', 19)(req, res, (err) => {
-        if (err) {
-            if (err.code === 'LIMIT_FILE_COUNT') {
-                return res.status(400).send({ success: false, error: 'You can only upload up to 18 files.' });
-            }
-            if (err.message) {
-                return res.status(400).send({ success: false, error: err.message });
-            }
-            return res.status(500).send({ success: false, error: err.message });
-        }
-        next();
-    });
-}, async (req, res) => {
+const { unlink } = require('fs').promises;
+
+app.post('/upload', upload.array('files', 19), async (req, res) => {
     try {
+        console.log("📂 Upload request received!");
+        console.log("📥 Files received:", req.files);
+        console.log("🆔 Received ID:", req.body.id);
+
         const { id } = req.body;
-        const rows = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
+        if (!id || id.length !== 36) {
+            console.error("❌ Invalid request ID!", id);
+            return res.status(400).json({ success: false, error: "Invalid request ID format!" });
+        }
+
+        if (!req.files || req.files.length === 0) {
+            console.error("❌ No files were uploaded!");
+            return res.status(400).json({ success: false, error: "No files were uploaded." });
+        }
+
+        console.log("🔍 Querying database...");
+        const { rows } = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
         if (!rows || rows.length === 0) {
-            return res.status(404).send({ success: false, error: 'Invalid or expired link.' });
+            console.error("❌ Invalid or expired link.");
+            return res.status(404).json({ success: false, error: "Invalid or expired link." });
         }
 
         const request = rows[0];
-        const folderName = `Order-${request.receiptid}-${request.name}`;
-        const folderId = await createFolder(folderName);
+        const folderName = `Order-${request.receiptId}-${request.name}`; // Fixed typo
+        console.log(`📂 Creating/finding folder: ${folderName}`);
 
+        let folderId;
+        try {
+            folderId = await createFolder(folderName);
+            console.log("✅ Folder ID:", folderId);
+        } catch (error) {
+            console.error("❌ Folder creation failed:", error.message);
+            return res.status(500).json({ success: false, error: "Google Drive folder error." });
+        }
+
+        console.log("🔗 Sharing folder...");
         await shareFolder(folderId, process.env.PERSONAL_EMAIL);
 
         const uploadedFiles = [];
         for (const file of req.files) {
+            console.log(`📤 Uploading ${file.originalname}...`);
             const fileId = await uploadFile(file.path, file.originalname, folderId);
             uploadedFiles.push({ fileName: file.originalname, fileId });
-            fs.unlinkSync(file.path);
+            console.log(`✅ Uploaded ${file.originalname} with ID: ${fileId}`);
+
+            try {
+                await unlink(file.path);
+                console.log(`🗑️ Deleted temp file: ${file.path}`);
+            } catch (unlinkError) {
+                console.error(`⚠️ Failed to delete temp file: ${file.path}`, unlinkError.message);
+            }
         }
+
+        console.log("✅ All files uploaded successfully!");
 
         const centralTimestamp = new Intl.DateTimeFormat('en-US', {
             timeZone: 'America/Chicago',
@@ -582,19 +649,20 @@ app.post('/upload', (req, res, next) => {
             hour12: true,
         }).format(new Date());
 
+        console.log("🔄 Updating database status...");
         await db.query(
             `UPDATE requests SET status = $1, timestamp = $2 WHERE id = $3`,
             ['Completed', centralTimestamp, id]
         );
 
-        res.status(200).send({
+        res.status(200).json({
             success: true,
             message: 'Files uploaded successfully.',
             files: uploadedFiles,
         });
     } catch (error) {
-        console.error(`Error processing upload: ${error.message}`);
-        res.status(500).send({ success: false, error: error.message });
+        console.error("🚨 Detailed error in /upload:", error.stack);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
