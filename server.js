@@ -258,41 +258,86 @@ app.get('/upload-form/:id', async (req, res) => {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Upload Your Files</title>
+                <title>Upload & Crop Images</title>
                 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
                 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.css" />
                 <style>
+                    body {
+                        background-color: #f8f9fa;
+                        font-family: Arial, sans-serif;
+                    }
+
+                    .container {
+                        max-width: 900px;
+                        margin: 50px auto;
+                        background: white;
+                        padding: 20px;
+                        border-radius: 10px;
+                        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+                    }
+
+                    /* Image Grid */
+                    .image-grid {
+                        display: grid;
+                        grid-template-columns: repeat(3, 1fr);
+                        gap: 15px;
+                        padding: 15px;
+                        background: #e9ecef; /* Light gray background */
+                        border-radius: 10px;
+                        justify-content: center;
+                        margin-top: 10px;
+                    }
+
+                    .image-grid img {
+                        width: 100%;
+                        height: auto;
+                        max-height: 150px;
+                        object-fit: cover;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        transition: transform 0.2s ease-in-out;
+                        border: 5px solid #fff;
+                    }
+
+                    .image-grid img:hover {
+                        transform: scale(1.05);
+                    }
+
+                    /* Flexbox for Upload Section */
+                    .upload-section {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                    }
+
+                    /* Bouncy Spinner */
                     .spinner {
                         display: none;
-                        width: 3rem;
-                        height: 3rem;
-                        border: 5px solid rgba(0, 0, 0, 0.1);
-                        border-left-color: #007bff;
+                        width: 50px;
+                        height: 50px;
                         border-radius: 50%;
-                        animation: spin 1s linear infinite;
+                        background: linear-gradient(45deg, #007bff, #6610f2);
+                        animation: bounce 1.2s infinite alternate ease-in-out;
                         margin: 20px auto;
                     }
-                    @keyframes spin {
-                        100% {
-                            transform: rotate(360deg);
-                        }
+
+                    @keyframes bounce {
+                        0% { transform: translateY(0); }
+                        100% { transform: translateY(-10px); }
                     }
                 </style>
             </head>
             <body>
-                <div class="container mt-5">
-                    <h1>Upload Files</h1>
+                <div class="container">
+                    <h1 class="text-center">Upload & Crop Images</h1>
                     <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
                         <input type="hidden" name="id" value="${id}">
-                        <div class="mb-3">
-                            <label for="files" class="form-label">Select Files:</label>
+                        <div class="upload-section">
                             <input type="file" id="files" name="files" class="form-control" multiple required>
+                            <button id="uploadBtn" class="btn btn-primary ms-2">Upload</button>
                         </div>
-                        <div id="preview" class="mb-3 d-flex flex-wrap gap-2"></div>
-                        <div class="text-center">
-                            <button id="uploadBtn" class="btn btn-primary">Upload</button>
-                            <div id="loadingSpinner" class="spinner"></div>
-                        </div>
+                        <div id="preview" class="image-grid"></div>
+                        <div id="loadingSpinner" class="spinner"></div>
                     </form>
                 </div>
 
@@ -334,21 +379,21 @@ app.get('/upload-form/:id', async (req, res) => {
                 <script>
                     console.log("✅ Script loaded and running!");
 
-                    const fileInput = document.getElementById('files');
-                    const previewContainer = document.getElementById('preview');
-                    const croppieContainer = document.getElementById('croppieContainer');
-                    const modal = new bootstrap.Modal(document.getElementById('cropModal'));
-                    const uploadBtn = document.getElementById('uploadBtn');
-                    const loadingSpinner = document.getElementById('loadingSpinner');
+                    const fileInput = document.getElementById("files");
+                    const previewContainer = document.getElementById("preview");
+                    const croppieContainer = document.getElementById("croppieContainer");
+                    const modal = new bootstrap.Modal(document.getElementById("cropModal"));
+                    const uploadBtn = document.getElementById("uploadBtn");
+                    const loadingSpinner = document.getElementById("loadingSpinner");
 
                     let croppieInstance = null;
                     let filesMap = new Map();
                     let croppedFiles = new Map();
 
-                    fileInput.addEventListener('change', handleFileSelect);
+                    fileInput.addEventListener("change", handleFileSelect);
 
                     function handleFileSelect(event) {
-                        previewContainer.innerHTML = '';
+                        previewContainer.innerHTML = "";
                         filesMap.clear();
                         croppedFiles.clear();
 
@@ -358,22 +403,23 @@ app.get('/upload-form/:id', async (req, res) => {
                             filesMap.set(fileId, file);
                             displayFilePreview(file, fileId);
                         });
+
+                        adjustGridLayout(filesArray.length);
                     }
 
                     function displayFilePreview(file, fileId) {
-                        if (file.type.startsWith('image/')) {
+                        if (file.type.startsWith("image/")) {
                             const reader = new FileReader();
                             reader.onload = () => {
-                                const imageWrapper = document.createElement('div');
-                                imageWrapper.className = 'image-wrapper';
+                                const imageWrapper = document.createElement("div");
+                                imageWrapper.className = "image-wrapper";
                                 imageWrapper.dataset.fileId = fileId;
 
-                                const image = document.createElement('img');
+                                const image = document.createElement("img");
                                 image.src = reader.result;
-                                image.className = 'img-thumbnail';
-                                image.style.width = '150px';
-                                image.style.cursor = 'pointer';
-                                image.addEventListener('click', () => openCropModal(reader.result, fileId));
+                                image.className = "img-thumbnail";
+                                image.style.cursor = "pointer";
+                                image.addEventListener("click", () => openCropModal(reader.result, fileId));
 
                                 imageWrapper.appendChild(image);
                                 previewContainer.appendChild(imageWrapper);
@@ -384,18 +430,18 @@ app.get('/upload-form/:id', async (req, res) => {
 
                     function openCropModal(imageSrc, fileId) {
                         if (croppieInstance) croppieInstance.destroy();
-                        croppieContainer.innerHTML = '';
+                        croppieContainer.innerHTML = "";
 
                         croppieInstance = new Croppie(croppieContainer, {
-                            viewport: { width: 200, height: 200, type: 'square' },
-                            boundary: { width: 300, height: 300 }
+                            viewport: { width: 300, height: 300, type: "square" },
+                            boundary: { width: 400, height: 400 }
                         });
 
                         croppieInstance.bind({ url: imageSrc });
                         modal.show();
 
-                        document.getElementById('saveCrop').onclick = () => {
-                            croppieInstance.result({ type: 'blob' }).then(croppedBlob => {
+                        document.getElementById("saveCrop").onclick = () => {
+                            croppieInstance.result({ type: "blob" }).then(croppedBlob => {
                                 croppedFiles.set(fileId, croppedBlob);
                                 updateThumbnail(fileId, croppedBlob);
                                 modal.hide();
@@ -406,43 +452,47 @@ app.get('/upload-form/:id', async (req, res) => {
                     function updateThumbnail(fileId, croppedBlob) {
                         const reader = new FileReader();
                         reader.onload = () => {
-                            const imageWrappers = previewContainer.querySelectorAll('.image-wrapper');
+                            const imageWrappers = previewContainer.querySelectorAll(".image-wrapper");
                             imageWrappers.forEach(wrapper => {
                                 if (wrapper.dataset.fileId === fileId) {
-                                    wrapper.querySelector('img').src = reader.result;
+                                    wrapper.querySelector("img").src = reader.result;
                                 }
                             });
                         };
                         reader.readAsDataURL(croppedBlob);
                     }
 
-                    document.getElementById('uploadForm').addEventListener('submit', async (event) => {
+                    function adjustGridLayout(imageCount) {
+                        previewContainer.style.gridTemplateColumns = "repeat(3, 1fr)";
+                    }
+
+                    document.getElementById("uploadForm").addEventListener("submit", async (event) => {
                         event.preventDefault();
                         uploadBtn.disabled = true;
-                        loadingSpinner.style.display = 'block';
+                        loadingSpinner.style.display = "block";
 
                         const formData = new FormData();
                         const id = document.querySelector('input[name="id"]').value;
-                        formData.append('id', id);
+                        formData.append("id", id);
 
                         filesMap.forEach((file, fileId) => {
                             if (croppedFiles.has(fileId)) {
-                                formData.append('files', croppedFiles.get(fileId), file.name);
+                                formData.append("files", croppedFiles.get(fileId), file.name);
                             } else {
-                                formData.append('files', file);
+                                formData.append("files", file);
                             }
                         });
 
                         try {
-                            const response = await fetch('/upload', { method: 'POST', body: formData });
+                            const response = await fetch("/upload", { method: "POST", body: formData });
                             const result = await response.json();
                             if (result.success) {
-                                const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+                                const successModal = new bootstrap.Modal(document.getElementById("successModal"));
                                 successModal.show();
                                 setTimeout(() => { window.location.reload(); }, 3000);
                             }
                         } finally {
-                            loadingSpinner.style.display = 'none';
+                            loadingSpinner.style.display = "none";
                             uploadBtn.disabled = false;
                         }
                     });
@@ -489,10 +539,10 @@ app.post('/request-restart', async (req, res) => {
 
 // `/upload` Endpoint
 app.post('/upload', (req, res, next) => {
-    upload.array('files', 10)(req, res, (err) => {
+    upload.array('files', 19)(req, res, (err) => {
         if (err) {
             if (err.code === 'LIMIT_FILE_COUNT') {
-                return res.status(400).send({ success: false, error: 'You can only upload up to 9 files.' });
+                return res.status(400).send({ success: false, error: 'You can only upload up to 18 files.' });
             }
             if (err.message) {
                 return res.status(400).send({ success: false, error: err.message });
