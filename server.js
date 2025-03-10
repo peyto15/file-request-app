@@ -43,13 +43,13 @@ app.post("/shopify-webhook", express.raw({ type: "application/json" }), async (r
         id: crypto.randomUUID(), // Generate unique request ID
         name: `${order.customer?.first_name || "Unknown"} ${order.customer?.last_name || ""}`.trim(),
         email: order.contact_email || order.customer?.email || "No Email",
-        receiptId: order.id,
+        receiptid: order.id,
         timestamp: order.created_at,
         status: "Pending",
     };
 
     // 🔍 Check for Duplicate Orders
-    const existing = await db.query("SELECT * FROM requests WHERE receiptId = $1", [orderData.receiptId]);
+    const existing = await db.query("SELECT * FROM requests WHERE receiptid = $1", [orderData.receiptid]);
 
     if (existing.rowCount > 0) {
         console.log("⚠️ Order already exists. Skipping duplicate entry.");
@@ -65,9 +65,9 @@ app.post("/shopify-webhook", express.raw({ type: "application/json" }), async (r
     // 🔹 Save to Database
     try {
         await db.query(
-            `INSERT INTO requests (id, name, email, receiptId, timestamp, status)
+            `INSERT INTO requests (id, name, email, receiptid, timestamp, status)
              VALUES ($1, $2, $3, $4, $5, $6)`,
-            [orderData.id, orderData.name, orderData.email, orderData.receiptId, orderData.timestamp, orderData.status]
+            [orderData.id, orderData.name, orderData.email, orderData.receiptid, orderData.timestamp, orderData.status]
         );
         console.log("✅ Order Saved to Database:", orderData);
     } catch (error) {
@@ -83,8 +83,8 @@ app.post("/shopify-webhook", express.raw({ type: "application/json" }), async (r
 });
 
 // ✅ 2️⃣ NOW Enable `express.json()` for ALL Other Routes
-// app.use(bodyParser.json());
-// app.use(express.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Landing page bc why not
 app.get('/', (req, res) => {
@@ -108,8 +108,8 @@ const upload = multer({
         }
     },
 });
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// app.use(express.json());
+// app.use(express.urlencoded({ extended: true }));
 
 
 // Google Drive Authentication
@@ -204,8 +204,8 @@ async function shareFolder(folderId, email) {
 `/process-order`
 app.post('/process-order', async (req, res) => {
     try {
-        const { name, email, receiptId, timestamp } = req.body;
-        if (!name || !email || !receiptId) {
+        const { name, email, receiptid, timestamp } = req.body;
+        if (!name || !email || !receiptid) {
             return res.status(400).send({ success: false, error: 'Missing required fields.' });
         }
 
@@ -213,9 +213,9 @@ app.post('/process-order', async (req, res) => {
         const createdAt = timestamp || new Date().toISOString();
 
         await db.query(
-            `INSERT INTO requests (id, name, email, receiptId, timestamp, status)
+            `INSERT INTO requests (id, name, email, receiptid, timestamp, status)
              VALUES ($1, $2, $3, $4, $5, $6)`,
-            [uniqueId, name, email, receiptId, createdAt, 'Pending']
+            [uniqueId, name, email, receiptid, createdAt, 'Pending']
         );
 
         const uploadLink = `https://file-request-app.onrender.com/upload-form/${uniqueId}`;
@@ -325,11 +325,67 @@ app.get('/upload-form/:id', async (req, res) => {
                         0% { transform: translateY(0); }
                         100% { transform: translateY(-10px); }
                     }
+
+                    .upload-overlay {
+                        display: none;
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 100%;
+                        background: rgba(0, 0, 0, 0.7);
+                        z-index: 1000;
+                        justify-content: center;
+                        align-items: center;
+                        text-align: center;
+                    }
+
+                    .spinner-container {
+                        background: white;
+                        padding: 30px;
+                        border-radius: 15px;
+                        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                    }
+
+                    .magnet-spinner {
+                        width: 60px;
+                        height: 60px;
+                        margin: 0 auto 20px;
+                        animation: spin 2s linear infinite;
+                    }
+
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+
+                    .loading-text {
+                        color: #333;
+                        font-size: 18px;
+                        margin-top: 15px;
+                        font-family: 'Arial', sans-serif;
+                    }
+
+                    .stars-spinner {
+                        width: 100px;
+                        height: 100px;
+                        margin: 0 auto 20px;
+                    }
+
+                    .star-1 { animation: twinkle 1.5s infinite; }
+                    .star-2 { animation: twinkle 1.5s infinite 0.5s; }
+                    .star-3 { animation: twinkle 1.5s infinite 1s; }
+
+                    @keyframes twinkle {
+                        0% { transform: scale(1); opacity: 1; }
+                        50% { transform: scale(0.8); opacity: 0.3; }
+                        100% { transform: scale(1); opacity: 1; }
+                    }
                 </style>
             </head>
             <body>
                 <div class="container">
-                    <h1 class="text-center">Upload & Crop Images</h1>
+                    <h1 class="text-center">Crop and Upload Images</h1>
                     <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
                         <input type="hidden" name="id" value="${id}">
                         <div class="upload-section">
@@ -337,7 +393,27 @@ app.get('/upload-form/:id', async (req, res) => {
                             <button id="uploadBtn" class="btn btn-primary ms-2">Upload</button>
                         </div>
                         <div id="preview" class="image-grid"></div>
-                        <div id="loadingSpinner" class="spinner"></div>
+                        <div class="upload-overlay">
+                            <div class="spinner-container">
+                                <svg class="stars-spinner" viewBox="0 0 100 100" fill="none" stroke="#007bff">
+                                    <!-- Main star -->
+                                    <path class="star-1" d="M50 15 L53 35 L65 25 L55 40 L75 43 L55 45 L65 60 L50 47 L35 60 L45 45 L25 43 L45 40 L35 25 L47 35 Z" 
+                                          fill="#007bff" stroke="none">
+                                        <animate attributeName="opacity" from="1" to="0.3" dur="1.5s" repeatCount="indefinite"/>
+                                    </path>
+                                    <!-- Smaller stars -->
+                                    <path class="star-2" d="M20 20 L22 25 L27 22 L24 27 L29 29 L24 30 L27 35 L20 31 L15 35 L18 30 L13 29 L18 27 L15 22 L19 25 Z" 
+                                          fill="#4dabf7" stroke="none">
+                                        <animate attributeName="opacity" from="1" to="0.3" dur="1.5s" begin="0.5s" repeatCount="indefinite"/>
+                                    </path>
+                                    <path class="star-3" d="M75 25 L77 30 L82 27 L79 32 L84 34 L79 35 L82 40 L75 36 L70 40 L73 35 L68 34 L73 32 L70 27 L74 30 Z" 
+                                          fill="#4dabf7" stroke="none">
+                                        <animate attributeName="opacity" from="1" to="0.3" dur="1.5s" begin="1s" repeatCount="indefinite"/>
+                                    </path>
+                                </svg>
+                                <div class="loading-text">Your memories are on their way to magnetization! ✨</div>
+                            </div>
+                        </div>
                     </form>
                 </div>
 
@@ -384,7 +460,6 @@ app.get('/upload-form/:id', async (req, res) => {
                     const croppieContainer = document.getElementById("croppieContainer");
                     const modal = new bootstrap.Modal(document.getElementById("cropModal"));
                     const uploadBtn = document.getElementById("uploadBtn");
-                    const loadingSpinner = document.getElementById("loadingSpinner");
 
                     let croppieInstance = null;
                     let filesMap = new Map();
@@ -466,79 +541,54 @@ app.get('/upload-form/:id', async (req, res) => {
                         previewContainer.style.gridTemplateColumns = "repeat(3, 1fr)";
                     }
 
+                    // Update the upload form script section:
+
                     document.getElementById("uploadForm").addEventListener("submit", async (event) => {
-                    event.preventDefault();
+                        event.preventDefault();
+                        
+                        const overlay = document.querySelector('.upload-overlay');
+                        uploadBtn.disabled = true;
+                        overlay.style.display = "flex";
+                        
+                        const formData = new FormData();
+                        const id = document.querySelector('input[name="id"]').value;
+                        formData.append("id", id);
 
-                    const uploadBtn = document.getElementById("uploadBtn");
-                    const loadingSpinner = document.getElementById("loadingSpinner");
-                    const fileInput = document.getElementById("files");
-                    const formData = new FormData();
-
-                    uploadBtn.disabled = true;
-                    loadingSpinner.style.display = "block";
-
-                    const id = document.querySelector('input[name="id"]').value;
-
-                    if (!id) {
-                        console.error("❌ Missing ID in form submission!");
-                        alert("Error: Missing Order ID. Try refreshing the page.");
-                        uploadBtn.disabled = false;
-                        loadingSpinner.style.display = "none";
-                        return;
-                    }
-
-                    formData.append("id", id);
-
-                    // Check if files exist before sending
-                    if (fileInput.files.length === 0) {
-                        console.error("❌ No files selected for upload!");
-                        alert("Please select at least one file.");
-                        uploadBtn.disabled = false;
-                        loadingSpinner.style.display = "none";
-                        return;
-                    }
-
-                    for (let i = 0; i < fileInput.files.length; i++) {
-                        formData.append("files", fileInput.files[i]);
-                    }
-
-                    console.log("📂 Sending FormData:");
-                    for (let pair of formData.entries()) {
-                        console.log(pair[0] + " , " + pair[1]); // Debugging FormData contents
-                    }
-
-                    try {
-                        const response = await fetch("/upload", {
-                            method: "POST",
-                            body: formData,
-                        });
-
-                        console.log("📥 Server Response Status:", response.status);
-
-                        if (!response.ok) {
-                            throw new Error("Server responded with status: " + response.status);
+                        // Handle both cropped and uncropped files
+                        for (const [fileId, file] of filesMap) {
+                            if (croppedFiles.has(fileId)) {
+                                const croppedBlob = croppedFiles.get(fileId);
+                                const originalName = file.name;
+                                const extension = originalName.split('.').pop();
+                                const baseName = originalName.slice(0, -(extension.length + 1));
+                                const newName = \`\${baseName}-cropped.\${extension}\`;
+                                formData.append("files", croppedBlob, newName);
+                            } else {
+                                formData.append("files", file);
+                            }
                         }
 
-                        const result = await response.json();
-                        console.log("✅ Server Response Data:", result);
+                        try {
+                            const response = await fetch("/upload", {
+                                method: "POST",
+                                body: formData
+                            });
 
-                        if (result.success) {
-                            const successModal = new bootstrap.Modal(document.getElementById("successModal"));
-                            successModal.show();
-                            setTimeout(() => {
-                                window.location.reload();
-                            }, 3000);
-                        } else {
-                            alert("Upload failed: " + result.error);
+                            if (response.ok) {
+                                setTimeout(() => {
+                                    window.location.reload();
+                                }, 1000);
+                            } else {
+                                throw new Error('Upload failed');
+                            }
+                        } catch (error) {
+                            console.error("🚨 Upload error:", error);
+                            alert("Upload failed. " + error.message);
+                            overlay.style.display = "none";
+                        } finally {
+                            uploadBtn.disabled = false;
                         }
-                    } catch (error) {
-                        console.error("🚨 Upload error:", error);
-                        alert("Upload failed. " + error.message);
-                    } finally {
-                        loadingSpinner.style.display = "none";
-                        uploadBtn.disabled = false;
-                    }
-                });
+                    });
                 </script>
             </body>
             </html>
@@ -582,7 +632,7 @@ app.post('/request-restart', async (req, res) => {
 
 const { unlink } = require('fs').promises;
 
-app.post('/upload', upload.array('files', 19), async (req, res) => {
+app.post('/upload', upload.array('files', 18), async (req, res) => {
     try {
         console.log("📂 Upload request received!");
         console.log("📥 Files received:", req.files);
@@ -594,21 +644,36 @@ app.post('/upload', upload.array('files', 19), async (req, res) => {
             return res.status(400).json({ success: false, error: "Invalid request ID format!" });
         }
 
-        if (!req.files || req.files.length === 0) {
-            console.error("❌ No files were uploaded!");
-            return res.status(400).json({ success: false, error: "No files were uploaded." });
+        // Query database with error handling
+        const queryResult = await db.query(`
+            SELECT id, "receiptid", name, email, status 
+            FROM requests 
+            WHERE id = $1 AND status = 'Pending'
+        `, [id]);
+
+        console.log("Query result:", queryResult);
+
+        if (!queryResult || queryResult.length === 0) {
+            console.error("❌ No valid request found for ID:", id);
+            return res.status(404).json({ 
+                success: false, 
+                error: "No valid request found" 
+            });
         }
 
-        console.log("🔍 Querying database...");
-        const { rows } = await db.query(`SELECT * FROM requests WHERE id = $1`, [id]);
-        if (!rows || rows.length === 0) {
-            console.error("❌ Invalid or expired link.");
-            return res.status(404).json({ success: false, error: "Invalid or expired link." });
+        const request = queryResult[0];
+        
+        // Validate request data
+        if (!request.receiptid || !request.name) {
+            console.error("❌ Invalid request data:", request);
+            return res.status(400).json({ 
+                success: false, 
+                error: "Invalid request data" 
+            });
         }
 
-        const request = rows[0];
-        const folderName = `Order-${request.receiptId}-${request.name}`; // Fixed typo
-        console.log(`📂 Creating/finding folder: ${folderName}`);
+        const folderName = `Order-${request.receiptid}-${request.name}`.replace(/[^a-zA-Z0-9-]/g, '_');
+        console.log(`📂 Creating folder: ${folderName}`);
 
         let folderId;
         try {
