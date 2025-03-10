@@ -7,8 +7,14 @@ const fs = require('fs');
 const db = require('./database');
 const cron = require('node-cron');
 require('dotenv').config();
+const path = require('path');
 
 const app = express();
+
+// Landing page bc why not
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // Allowed file types for server-side validation
 const allowedFileTypes = ['image/jpeg', 'image/png', 'application/pdf'];
