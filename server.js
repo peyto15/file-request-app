@@ -125,7 +125,7 @@ async function shareFolder(folderId, email) {
     }
 }
 
-// `/process-order` Endpoint
+`/process-order`
 app.post('/process-order', async (req, res) => {
     try {
         const { name, email, receiptId, timestamp } = req.body;
@@ -565,8 +565,7 @@ cron.schedule('0 0 * * *', async () => {
     }
 });
 
-
-// Start the server
-app.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
